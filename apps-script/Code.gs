@@ -2,17 +2,18 @@
  * Food Tracker — Google Apps Script Web App (thin JSON API over a Google Sheet).
  *
  * Deploy as a Web App: "Execute as: me", "Who has access: Anyone with the link".
- * Set Script Properties: CLIENT_ID (OAuth Web Client ID) and ALLOWED_EMAIL (your Gmail).
+ * Set one Script Property: SHARED_SECRET (a password of your choice).
  *
  * All requests are POST with Content-Type: text/plain and a JSON string body:
- *   { "action": "getFoods", "id_token": "<google id token>", ...payload }
+ *   { "action": "getFoods", "secret": "<your shared secret>", ...payload }
  * Responses are JSON: { ok:true, data:... } or { ok:false, error:"code" }.
  *
  * Design notes:
  *  - Columns are read by header name (no fixed column count) so the schema can grow.
  *  - Numbers are written as real JS numbers (never locale-formatted strings) to avoid
  *    the comma-decimal locale trap. Blank ("unknown") is stored as an empty cell, never 0.
- *  - Every request verifies the caller's Google ID token against ALLOWED_EMAIL.
+ *  - Every request must carry the SHARED_SECRET; mismatches return { ok:false,
+ *    error:"unauthorized" }. (Google Sign-In is preserved in git history.)
  *  - Writes are serialized with LockService to prevent interleaved appends.
  */
 
@@ -49,9 +50,9 @@ function doPost(e) {
     if (!handler) return jsonOut({ ok: false, error: 'unknown_action' });
 
     // Auth on every request. Throws AuthError on failure.
-    var claims = verify(payload.id_token);
+    verify(payload);
 
-    var data = handler(payload, claims);
+    var data = handler(payload);
     return jsonOut({ ok: true, data: data });
   } catch (err) {
     if (err && err.name === 'AuthError') {
@@ -79,70 +80,33 @@ function authFail() { throw new AuthError(); }
 function ClientError(code) { this.name = 'ClientError'; this.code = code; }
 function clientFail(code) { throw new ClientError(code); }
 
-// ---- Auth: verify Google ID token ---------------------------------------------
+// ---- Auth: verify the shared secret -------------------------------------------
 
 /**
- * Verify a Google ID token and return its claims. Throws AuthError on any failure.
- * Successful verifications are cached (keyed by a hash of the token) for the token's
- * remaining lifetime, so repeated requests in a session verify locally.
+ * Check the request's shared secret against SHARED_SECRET (Script Properties).
+ * Throws AuthError on a missing/blank/mismatched secret. This is a personal
+ * single-user MVP: the endpoint is reachable by "Anyone with the link", but every
+ * request must carry the correct secret (sent in the POST body over HTTPS, never in
+ * the URL). To restore Google Sign-In later, see git history.
  */
-function verify(idToken) {
-  if (!idToken || typeof idToken !== 'string') authFail();
+function verify(payload) {
+  var expected = PropertiesService.getScriptProperties().getProperty('SHARED_SECRET');
+  if (!expected) authFail(); // misconfigured — fail closed
 
-  var props = PropertiesService.getScriptProperties();
-  var clientId = props.getProperty('CLIENT_ID');
-  var allowedEmail = props.getProperty('ALLOWED_EMAIL');
-  if (!clientId || !allowedEmail) authFail(); // misconfigured — fail closed
-
-  var cache = CacheService.getScriptCache();
-  var digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, idToken);
-  var key = 'tok_' + bytesToHex(digest);
-
-  var cached = cache.get(key);
-  if (cached) {
-    return JSON.parse(cached);
-  }
-
-  var resp;
-  try {
-    resp = UrlFetchApp.fetch(
-      'https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(idToken),
-      { muteHttpExceptions: true }
-    );
-  } catch (fetchErr) {
+  var provided = payload && payload.secret;
+  if (typeof provided !== 'string' || !constantTimeEquals(provided, expected)) {
     authFail();
   }
-  if (resp.getResponseCode() !== 200) authFail();
-
-  var info;
-  try {
-    info = JSON.parse(resp.getContentText());
-  } catch (jsonErr) {
-    authFail();
-  }
-
-  var nowSec = Math.floor(Date.now() / 1000);
-  var exp = parseInt(info.exp, 10);
-  var okAud = info.aud === clientId;
-  var okEmail = (info.email || '').toLowerCase() === allowedEmail.toLowerCase();
-  var okVerified = String(info.email_verified) === 'true';
-  var okExp = exp && exp > nowSec;
-
-  if (!(okAud && okEmail && okVerified && okExp)) authFail();
-
-  var claims = { email: info.email, sub: info.sub, exp: exp };
-  var ttl = Math.min(exp - nowSec, 3600); // CacheService max 6h; token life ~1h
-  if (ttl > 0) cache.put(key, JSON.stringify(claims), ttl);
-  return claims;
 }
 
-function bytesToHex(bytes) {
-  var s = '';
-  for (var i = 0; i < bytes.length; i++) {
-    var b = (bytes[i] + 256) % 256;
-    s += (b < 16 ? '0' : '') + b.toString(16);
+/** Length-safe string comparison (avoids leaking length via early exit). */
+function constantTimeEquals(a, b) {
+  if (a.length !== b.length) return false;
+  var diff = 0;
+  for (var i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
   }
-  return s;
+  return diff === 0;
 }
 
 // ---- Sheet access helpers (header-driven) -------------------------------------

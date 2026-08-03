@@ -7,19 +7,8 @@
 <link rel="apple-touch-icon" href="icon.svg" />
 <link rel="stylesheet" href="styles.css" />
 
-<!-- Google Identity Services (One Tap + Sign-in button). No build step. -->
-<script src="https://accounts.google.com/gsi/client" async defer></script>
-
-<!-- Sign-in screen: shown until authenticated. -->
-<div id="signin-screen" class="signin-screen" hidden>
-  <div class="signin-card">
-    <div class="signin-logo" aria-hidden="true">🍽️</div>
-    <h1>Food Tracker</h1>
-    <p class="muted">Sign in with your Google account to continue.</p>
-    <div id="gsi-button"></div>
-    <p id="signin-status" class="muted small" role="status" aria-live="polite"></p>
-  </div>
-</div>
+<!-- Sign-in screen: the password prompt is rendered here by auth.js until unlocked. -->
+<div id="signin-screen" class="signin-screen" hidden></div>
 
 <!-- App shell: shown once authenticated. -->
 <div id="app" class="app" hidden>

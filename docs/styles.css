@@ -81,7 +81,7 @@ input, select, textarea { font: inherit; color: var(--text); }
   text-align: center;
 }
 .signin-logo { font-size: 44px; margin-bottom: 8px; }
-#gsi-button { display: flex; justify-content: center; margin: 18px 0 6px; min-height: 40px; }
+.signin-card input[type="password"] { text-align: center; }
 
 /* ---- App shell ---- */
 .app { min-height: 100vh; }

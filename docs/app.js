@@ -1,8 +1,9 @@
-// app.js — entry point. Bootstraps Google Sign-In, loads initial data, wires the
-// bottom tab bar, and renders the active view.
+// app.js — entry point. Gates the app behind a shared password, loads initial data,
+// wires the bottom tab bar, and renders the active view.
 
 import * as auth from "./auth.js";
 import * as state from "./state.js";
+import { setReauthHandler } from "./api.js";
 import { el, toast } from "./ui.js";
 import { createLogView } from "./views/log.js";
 import { createFoodsView } from "./views/foods.js";
@@ -12,23 +13,18 @@ const signinScreen = document.getElementById("signin-screen");
 const appEl = document.getElementById("app");
 
 let views = null;
-let current = null;
+let started = false;
 
 // Navigation context handed to each view.
-const ctx = {
-  navigate,
-};
+const ctx = { navigate };
 
 function navigate(name, opts = {}) {
-  // Toggle sections.
   document.querySelectorAll(".view").forEach((sec) => {
     sec.hidden = sec.dataset.view !== name;
   });
-  // Update tab selection.
   document.querySelectorAll(".tab").forEach((t) => {
     t.setAttribute("aria-selected", String(t.dataset.tab === name));
   });
-  current = name;
   views[name].show(opts);
 }
 
@@ -39,77 +35,65 @@ function wireTabs() {
 }
 
 function renderAccountFooter() {
-  // A small unobtrusive footer with the signed-in email + sign out, added to each view's
-  // scroll area via the Foods view is awkward; instead put it fixed above the tab bar
-  // only inside the Log view card area. Simplest: append to the app once.
   const existing = document.getElementById("account-footer");
   if (existing) existing.remove();
   const footer = el("div", { id: "account-footer", class: "footer-account" }, [
-    el("span", { text: auth.getEmail() || "" }),
+    el("span", { text: "Signed in on " + auth.getEmail() }),
     document.createTextNode(" · "),
-    el("button", { text: "Sign out", onclick: () => auth.signOut() }),
+    el("button", { text: "Forget password", onclick: () => auth.signOut() }),
   ]);
-  // Place it at the bottom of the views container.
   document.querySelector(".views").appendChild(footer);
 }
 
-async function onSignedIn() {
+// Called once the user has a stored secret. Idempotent (built views only once).
+async function startApp() {
   signinScreen.hidden = true;
   appEl.hidden = false;
 
-  views = {
-    log: createLogView(ctx),
-    foods: createFoodsView(ctx),
-    history: createHistoryView(ctx),
-  };
-  wireTabs();
+  if (!started) {
+    started = true;
+    views = {
+      log: createLogView(ctx),
+      foods: createFoodsView(ctx),
+      history: createHistoryView(ctx),
+    };
+    wireTabs();
+  }
 
-  // Load shared data needed by the first view (foods + settings). Views also load
-  // their own data, but priming these avoids flicker and enables the summary bar.
   try {
-    await Promise.all([state.loadFoods(), state.loadSettings()]);
+    await Promise.all([state.loadFoods(true), state.loadSettings(true)]);
   } catch (err) {
     toast("Couldn't reach the server. Check config.js / your connection.", { error: true });
   }
 
   renderAccountFooter();
   navigate("log");
-
-  scheduleProactiveRefresh();
 }
 
-// Optionally refresh the token a bit before it expires, so long sessions stay smooth.
-function scheduleProactiveRefresh() {
-  const left = auth.secondsUntilExpiry();
-  if (!left) return;
-  const refreshIn = Math.max(30, left - 120) * 1000; // ~2 min before expiry
-  setTimeout(async () => {
-    try { await auth.refreshToken(); } catch (_) {}
-    scheduleProactiveRefresh();
-  }, refreshIn);
-}
-
-function boot() {
-  signinScreen.hidden = false;
-  appEl.hidden = true;
-  auth.init({
-    onFirstSignIn: onSignedIn,
-    statusEl: document.getElementById("signin-status"),
-    buttonEl: document.getElementById("gsi-button"),
+// Re-auth handler for api.js: show the password screen and resolve once re-entered.
+// Returns a Promise so the failed request can retry with the fresh secret.
+function requestReauth(message) {
+  return new Promise((resolve) => {
+    appEl.hidden = true;
+    auth.promptForSecret({
+      container: signinScreen,
+      message,
+      onUnlock: () => { signinScreen.hidden = true; appEl.hidden = false; resolve(); },
+    });
   });
 }
 
-// GIS script loads async; wait for it (with a short poll) before initializing.
-function waitForGis(attempt = 0) {
-  if (window.google && google.accounts && google.accounts.id) {
-    boot();
-  } else if (attempt < 50) {
-    setTimeout(() => waitForGis(attempt + 1), 100);
+function boot() {
+  setReauthHandler(requestReauth);
+
+  if (auth.hasSecret()) {
+    startApp();
   } else {
-    document.getElementById("signin-screen").hidden = false;
-    document.getElementById("signin-status").textContent =
-      "Could not load Google Sign-In. Check your connection and reload.";
+    auth.promptForSecret({
+      container: signinScreen,
+      onUnlock: () => startApp(),
+    });
   }
 }
 
-waitForGis();
+boot();

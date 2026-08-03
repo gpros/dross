@@ -1,12 +1,12 @@
 // api.js — thin fetch wrapper around the Apps Script Web App.
 //
 // All requests are POST with Content-Type: text/plain (avoids a CORS preflight) and a
-// JSON string body carrying { action, id_token, ...payload }. On an `unauthorized`
-// response we silently refresh the ID token and retry once, so an in-progress action
-// (e.g. saving a meal) is never lost to token expiry.
+// JSON string body carrying { action, secret, ...payload }. On an `unauthorized` response
+// we re-prompt for the password and retry once, so an in-progress action (e.g. saving a
+// meal) is never lost to a wrong/changed password.
 
 import { API_URL } from "./config.js";
-import { getToken, refreshToken } from "./auth.js";
+import { getSecret, clearSecret } from "./auth.js";
 
 export class ApiError extends Error {
   constructor(code, message) {
@@ -15,13 +15,33 @@ export class ApiError extends Error {
   }
 }
 
+// app.js injects a handler that shows the password screen and resolves once the user
+// enters a fresh secret. Lets this low-level module trigger re-auth without importing UI.
+let reauthHandler = null;
+export function setReauthHandler(fn) {
+  reauthHandler = fn;
+}
+
+// Single-flight re-auth: if several requests get `unauthorized` at once (e.g. the initial
+// getFoods + getSettings), they must share ONE password prompt, not spawn one each.
+let pendingReauth = null;
+function ensureReauth(message) {
+  if (!reauthHandler) return Promise.reject(new Error("no_reauth_handler"));
+  if (!pendingReauth) {
+    pendingReauth = Promise.resolve(reauthHandler(message)).finally(() => {
+      pendingReauth = null;
+    });
+  }
+  return pendingReauth;
+}
+
 async function rawPost(action, payload) {
   let res;
   try {
     res = await fetch(API_URL, {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({ action, id_token: getToken(), ...payload }),
+      body: JSON.stringify({ action, secret: getSecret(), ...payload }),
     });
   } catch (networkErr) {
     throw new ApiError("network", "Network error — check your connection.");
@@ -41,19 +61,20 @@ async function rawPost(action, payload) {
 }
 
 /**
- * Perform an action. On `unauthorized`, refresh the token and retry exactly once.
+ * Perform an action. On `unauthorized`, re-prompt for the password and retry exactly once.
  * Returns the `data` field on success; throws ApiError otherwise.
  */
 export async function postAction(action, payload = {}) {
   let json = await rawPost(action, payload);
 
   if (!json.ok && json.error === "unauthorized") {
+    clearSecret();
     try {
-      await refreshToken();
+      await ensureReauth("That password was rejected — try again.");
     } catch (_) {
-      throw new ApiError("unauthorized", "Your session expired. Please sign in again.");
+      throw new ApiError("unauthorized", "Wrong password. Please sign in again.");
     }
-    json = await rawPost(action, payload); // retry once with the fresh token
+    json = await rawPost(action, payload); // retry once with the fresh secret
   }
 
   if (!json.ok) {
@@ -64,7 +85,7 @@ export async function postAction(action, payload = {}) {
 
 function messageFor(code) {
   switch (code) {
-    case "unauthorized": return "Your session expired. Please sign in again.";
+    case "unauthorized": return "Wrong password. Please sign in again.";
     case "name_taken": return "A food with that name already exists.";
     case "bad_nutrient": return "Nutrition values must be zero or positive numbers.";
     case "bad_target": return "Targets must be zero or positive numbers.";

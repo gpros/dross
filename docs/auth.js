@@ -1,133 +1,97 @@
-// auth.js — Google Identity Services (GIS) sign-in.
+// auth.js — shared-secret "sign in". No Google, no tokens.
 //
-// Flow:
-//  - init() sets up GIS with the Client ID and attempts One Tap (silent for returning
-//    users with an active Google session). If One Tap can't complete, it renders the
-//    standard "Sign in with Google" button on the sign-in screen.
-//  - The ID token is kept in memory only (never localStorage).
-//  - refreshToken() re-prompts GIS to obtain a fresh token (used on token expiry).
+// The user enters a password once; it's kept in memory and mirrored to localStorage so
+// they don't re-enter it on every visit. Every API request carries this secret. If the
+// server rejects it (wrong/changed password), we clear it and re-prompt.
 
-import { GOOGLE_CLIENT_ID } from "./config.js";
+import { el } from "./ui.js";
 
-let idToken = null;
-let email = null;
-let onSignedIn = null; // callback fired once, when we first get a valid token
+const STORAGE_KEY = "ft_secret";
 
-// Promises awaiting the *next* fresh token (used by refreshToken()).
-let pendingResolvers = [];
+let secret = null;
 
-function decodeJwtPayload(token) {
+// Hydrate from localStorage on load.
+try {
+  const stored = localStorage.getItem(STORAGE_KEY);
+  if (stored) secret = stored;
+} catch (_) {
+  /* localStorage unavailable (private mode) — fall back to in-memory only */
+}
+
+export function getSecret() {
+  return secret;
+}
+
+export function hasSecret() {
+  return !!secret;
+}
+
+function setSecret(value) {
+  secret = value;
   try {
-    const part = token.split(".")[1];
-    const json = atob(part.replace(/-/g, "+").replace(/_/g, "/"));
-    return JSON.parse(decodeURIComponent(escape(json)));
+    localStorage.setItem(STORAGE_KEY, value);
   } catch (_) {
-    return {};
+    /* ignore — in-memory still works for this session */
   }
 }
 
-// GIS calls this with a credential (ID token) on any successful sign-in / refresh.
-function handleCredential(response) {
-  idToken = response.credential;
-  const claims = decodeJwtPayload(idToken);
-  email = claims.email || null;
-
-  // Resolve anyone waiting on a refresh.
-  const waiters = pendingResolvers;
-  pendingResolvers = [];
-  waiters.forEach((r) => r(idToken));
-
-  if (onSignedIn) {
-    const cb = onSignedIn;
-    onSignedIn = null;
-    cb();
-  }
+export function clearSecret() {
+  secret = null;
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch (_) {}
 }
 
-export function init({ onFirstSignIn, statusEl, buttonEl }) {
-  onSignedIn = onFirstSignIn;
-
-  if (!window.google || !google.accounts || !google.accounts.id) {
-    if (statusEl) statusEl.textContent =
-      "Could not load Google Sign-In. Check your connection and reload.";
-    return;
-  }
-
-  google.accounts.id.initialize({
-    client_id: GOOGLE_CLIENT_ID,
-    callback: handleCredential,
-    auto_select: true,            // silent sign-in for returning users
-    use_fedcm_for_prompt: true,   // opt into FedCM (One Tap status methods are deprecated)
-    cancel_on_tap_outside: false,
-  });
-
-  // Always render the button so there's a reliable fallback if One Tap doesn't show.
-  if (buttonEl) {
-    google.accounts.id.renderButton(buttonEl, {
-      type: "standard",
-      theme: "filled_blue",
-      size: "large",
-      text: "signin_with",
-      shape: "pill",
-    });
-  }
-
-  if (statusEl) statusEl.textContent = "…or use One Tap if it appears.";
-
-  // Attempt One Tap. We don't inspect the prompt moment (those status methods are
-  // deprecated under FedCM); the rendered button covers every fallback case.
-  google.accounts.id.prompt();
-}
-
-export function getToken() {
-  return idToken;
-}
-
+// A label for the account footer. There's no real identity — just the device.
 export function getEmail() {
-  return email;
-}
-
-export function isSignedIn() {
-  return !!idToken;
-}
-
-// Returns the number of seconds until the current token expires (or 0 if unknown/expired).
-export function secondsUntilExpiry() {
-  if (!idToken) return 0;
-  const { exp } = decodeJwtPayload(idToken);
-  if (!exp) return 0;
-  return Math.max(0, exp - Math.floor(Date.now() / 1000));
-}
-
-// Re-prompt GIS for a fresh token. Resolves with the new token, or rejects on timeout.
-export function refreshToken() {
-  return new Promise((resolve, reject) => {
-    pendingResolvers.push(resolve);
-
-    const timer = setTimeout(() => {
-      // Remove our resolver if still pending.
-      pendingResolvers = pendingResolvers.filter((r) => r !== resolve);
-      reject(new Error("token_refresh_timeout"));
-    }, 15000);
-
-    // Wrap resolve so we clear the timer.
-    const idx = pendingResolvers.indexOf(resolve);
-    pendingResolvers[idx] = (tok) => {
-      clearTimeout(timer);
-      resolve(tok);
-    };
-
-    if (window.google && google.accounts && google.accounts.id) {
-      google.accounts.id.prompt();
-    }
-  });
+  return "this device";
 }
 
 export function signOut() {
-  idToken = null;
-  email = null;
-  if (window.google && google.accounts && google.accounts.id) {
-    google.accounts.id.disableAutoSelect();
-  }
+  clearSecret();
   location.reload();
+}
+
+// Render the password screen into the sign-in container and resolve onUnlock once the
+// user submits a non-empty password. `message` optionally explains a re-prompt.
+export function promptForSecret({ container, onUnlock, message = "" }) {
+  const input = el("input", {
+    type: "password",
+    inputmode: "text",
+    autocomplete: "current-password",
+    placeholder: "Password",
+    "aria-label": "Password",
+  });
+  const status = el("p", { class: "muted small", role: "status", "aria-live": "polite", text: message });
+  const button = el("button", { class: "btn primary block", text: "Continue" });
+
+  function submit() {
+    const value = input.value.trim();
+    if (!value) {
+      status.textContent = "Enter your password to continue.";
+      input.focus();
+      return;
+    }
+    setSecret(value);
+    onUnlock();
+  }
+
+  button.addEventListener("click", submit);
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
+
+  const card = el("div", { class: "signin-card" }, [
+    el("div", { class: "signin-logo", "aria-hidden": "true", text: "🍽️" }),
+    el("h1", { text: "Food Tracker" }),
+    el("p", { class: "muted", text: "Enter your password to continue." }),
+    input,
+    el("div", { style: "height:12px" }),
+    button,
+    status,
+  ]);
+
+  // Clear the container and show the card.
+  while (container.firstChild) container.removeChild(container.firstChild);
+  container.appendChild(card);
+  container.hidden = false;
+  input.focus();
 }

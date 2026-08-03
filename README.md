@@ -2,33 +2,40 @@
 
 A personal, mobile-first food-logging web app. The frontend is a static site (vanilla
 HTML/CSS/JS, no build step) hosted on **GitHub Pages**; the database is a **Google Sheet**
-accessed through a **Google Apps Script Web App** that acts as a thin JSON API. Sign-in is
-**Google Sign-In** — only your own Google account can read or write.
+accessed through a **Google Apps Script Web App** that acts as a thin JSON API. Access is
+protected by a single **shared password** you choose — no Google Sign-In, no OAuth setup.
 
 - **No servers**, no bundler, no runtime dependencies.
-- **No secrets in the repo.** The OAuth Client ID and the API URL are public by design.
-- Everything runs with just a Google account, a GitHub account, and a browser.
+- **No secrets in the repo.** Only the API URL is committed (it's not sensitive). Your
+  password lives only in the Apps Script Script Properties and your browser.
+- Everything runs with just a Google account (for the Sheet), a GitHub account, and a browser.
 
 ```
 [ Browser: static site on GitHub Pages ]
-        │  POST JSON + Google ID token
+        │  POST JSON + shared password
         ▼
-[ Google Apps Script Web App ]  ← verifies your ID token, then reads/writes the Sheet
+[ Google Apps Script Web App ]  ← checks the password, then reads/writes the Sheet
         │  SpreadsheetApp
         ▼
 [ Google Sheet: Foods · Meals · MealItems · Settings ]
 ```
 
+> **Note on auth.** This uses a shared password for a fast, personal-MVP setup. It's not as
+> strong as per-account Google Sign-In (anyone who has *both* your `/exec` URL and the
+> password could access the data), but it's plenty for a single-user trial and skips all the
+> Google Cloud OAuth configuration. Google Sign-In is preserved in git history if you want
+> to switch to it later.
+
 ## Repo layout
 
 ```
 docs/                 ← GitHub Pages serves this folder
-  index.html          app shell + Google Identity Services script
+  index.html          app shell (password screen + views)
   styles.css          system-adaptive (light/dark) styles
-  config.js           API_URL + GOOGLE_CLIENT_ID  ← you fill these in (non-secret)
-  app.js              entry: sign-in bootstrap + tab navigation
-  auth.js             Google Sign-In (One Tap + button, in-memory token, refresh)
-  api.js              fetch wrapper (POST text/plain, auto token-refresh + retry)
+  config.js           API_URL  ← you fill this in (non-secret; no password here)
+  app.js              entry: password gate + tab navigation
+  auth.js             shared-secret gate (password screen, localStorage, re-prompt)
+  api.js              fetch wrapper (POST text/plain, re-prompt + retry on bad password)
   state.js            in-memory catalog cache, settings, draft meal
   nutrition.js        client-side totals + "incomplete data" flags
   ui.js               escaping, toast, decimal parsing, shared summary-bar component
@@ -46,8 +53,8 @@ tools/import_foods_notes.md   optional bulk food import
 
 ## Setup — step by step
 
-You'll do this once. Budget ~20 minutes. There are three moving parts: the **Sheet +
-Apps Script**, the **Google Cloud OAuth client**, and **GitHub Pages**.
+You'll do this once. Budget ~10 minutes. Two moving parts: the **Sheet + Apps Script** and
+**GitHub Pages**. No Google Cloud / OAuth console at all.
 
 ### 1. Create the Sheet and paste the backend
 
@@ -57,85 +64,53 @@ Apps Script**, the **Google Cloud OAuth client**, and **GitHub Pages**.
    [`apps-script/Code.gs`](apps-script/Code.gs).
 4. Click **Save** (💾).
 5. In the toolbar function dropdown, select **`setupSheet`** and click **Run**.
-   - The first run asks you to **authorize** — approve the scopes (it only touches this
-     spreadsheet and makes external calls to Google's token-info endpoint).
-   - Go back to the Sheet tab: you now have four tabs — **Foods**, **Meals**,
-     **MealItems**, **Settings** — each with a header row. (Re-running `setupSheet` is safe.)
+   - The first run asks you to **authorize** — approve the scope (it only touches this one
+     spreadsheet). You'll see a "Google hasn't verified this app" warning because it's your
+     own script; click **Advanced ▸ Go to … (unsafe)** and **Allow**.
+   - ⚠️ **The first Run usually only completes the authorization and does NOT run the
+     function.** After granting permission, click **▶ Run** again to actually execute it.
+     Check **View ▸ Executions** — you want a `setupSheet` run marked *Completed*.
+   - Go back to the Sheet tab and **reload the page**: you now have four tabs — **Foods**,
+     **Meals**, **MealItems**, **Settings** — each with a header row. (Re-running
+     `setupSheet` is safe.)
 
-### 2. Create the Google Cloud OAuth client
+### 2. Set your password and deploy the Web App
 
-Sign-in needs an OAuth **Client ID**. This lives in a Google Cloud project.
-
-1. Go to <https://console.cloud.google.com>. Create a new project (top bar ▸ project
-   picker ▸ **New Project**). Any name; no billing needed.
-2. **OAuth consent screen** (left menu ▸ *APIs & Services ▸ OAuth consent screen*):
-   - User type: **External**. Click Create.
-   - Fill the required fields (app name, your email as support + developer contact). Save.
-   - **Leave the app in "Testing" mode.** On the *Audience* / *Test users* screen, click
-     **Add users** and add **your own Gmail address**.
-   - ⚠️ **Testing mode with yourself as a test user is all you need.** You do **not** need
-     to "publish" the app or go through Google verification — that's only for apps serving
-     other people. As the sole user/test-user, sign-in works indefinitely.
-3. **Create the OAuth Client ID** (*APIs & Services ▸ Credentials ▸ Create Credentials ▸
-   OAuth client ID*):
-   - Application type: **Web application**.
-   - **Authorized JavaScript origins** — add each of these (Add URI per line):
-     - `https://<your-github-username>.github.io`  ← your GitHub Pages origin
-     - `http://localhost:8137`   ← for local testing (any port you use; see below)
-     - `http://127.0.0.1:8137`
-   - **Authorized redirect URIs:** none needed for Google Identity Services token flow.
-   - Click **Create** and copy the **Client ID** (looks like
-     `1234567890-abcdef.apps.googleusercontent.com`).
-
-   > ⚠️ **Origin-mismatch gotcha.** The origin in the browser's address bar must **exactly**
-   > match an Authorized JavaScript origin — scheme, host, and port, with **no trailing
-   > slash and no path**. `http://localhost:8137` ✅ but `http://localhost:8137/` or
-   > `.../index.html` ❌. If you see `redirect_uri_mismatch` / `origin_mismatch` or the
-   > button silently does nothing, this is why.
-   >
-   > ⚠️ **Propagation delay.** After adding or changing an origin, Google can take a few
-   > minutes (occasionally up to ~1 hour) to propagate. If it "should work" but doesn't,
-   > wait and retry before debugging further.
-
-### 3. Configure and deploy the Apps Script Web App
-
-1. Back in the Apps Script editor: **Project Settings** (⚙️ left) ▸ **Script Properties** ▸
-   **Add script property**, add two:
-   - `CLIENT_ID` = the OAuth Client ID from step 2.
-   - `ALLOWED_EMAIL` = your Gmail address (the only account allowed to use the API).
+1. In the Apps Script editor: **Project Settings** (⚙️ on the left) ▸ **Script Properties** ▸
+   **Add script property**:
+   - Property: `SHARED_SECRET` — Value: **a password of your choice** (make it long-ish).
+   - Save.
 2. **Deploy ▸ New deployment**:
    - Type (gear icon): **Web app**.
-   - **Execute as: Me**.
+   - **Execute as: Me.**
    - **Who has access: Anyone with the link.**
-     (This is safe: the script itself rejects every request whose Google ID token isn't
-     your `ALLOWED_EMAIL`. "Anyone with the link" only means the *endpoint* is reachable.)
-   - Click **Deploy**, authorize if asked, and **copy the Web app URL** — it ends in
-     `/exec`.
+     (Safe for this setup: the script rejects every request that doesn't carry your
+     `SHARED_SECRET`. "Anyone with the link" only means the *endpoint* is reachable.)
+   - Click **Deploy**, authorize if asked, and **copy the Web app URL** — it ends in `/exec`.
 3. **Health check:** open that `/exec` URL in a browser. You should see
-   `{"ok":true,"data":"health ok"}`.
+   `{"ok":true,"data":"health ok"}`. (This endpoint needs no password — it's just a ping.)
 
-### 4. Fill in `config.js`
+### 3. Fill in `config.js`
 
-Edit [`docs/config.js`](docs/config.js) and replace the two placeholders:
+Edit [`docs/config.js`](docs/config.js) and paste your `/exec` URL:
 
 ```js
 export const API_URL = "https://script.google.com/macros/s/AKfy…/exec"; // your /exec URL
-export const GOOGLE_CLIENT_ID = "1234567890-abcdef.apps.googleusercontent.com";
 ```
 
-Commit and push. (Both values are non-secret — safe in a public repo.)
+Commit and push. (The URL is non-secret. Do **not** put your password here.)
 
-### 5. Enable GitHub Pages
+### 4. Enable GitHub Pages
 
 1. Push this repo to GitHub.
 2. Repo **Settings ▸ Pages**:
    - **Source: Deploy from a branch.**
-   - **Branch: `main`**, **Folder: `/docs`**. Save.
+   - **Branch: `main`** (or `food-tracker` if that's where this lives), **Folder: `/docs`**. Save.
 3. Wait ~1 minute, then open `https://<your-username>.github.io/<repo>/`.
-   - One Tap should sign you in silently if you have an active Google session; otherwise
-     tap **Sign in with Google** once.
+   - Enter your **`SHARED_SECRET`** password once. It's saved in that browser (localStorage),
+     so you won't be asked again on that device. "Forget password" (in the footer) clears it.
 
-### 6. Local testing (optional)
+### 5. Local testing (optional)
 
 From the repo root:
 
@@ -144,8 +119,8 @@ cd docs
 python3 -m http.server 8137
 ```
 
-Open <http://localhost:8137/index.html>. (This is why `http://localhost:8137` is in the
-Authorized JavaScript origins. Use whatever port you like, but it must match an origin.)
+Open <http://localhost:8137/index.html> and enter your password. (No origin configuration is
+needed anymore — that was only for Google Sign-In.)
 
 ---
 
@@ -174,14 +149,13 @@ No Python or OAuth needed because the editor already runs as you.
 
 ## How it works (design notes)
 
-- **Auth on every request.** The frontend sends a Google **ID token** in the JSON body of
-  every POST. The Apps Script verifies it against Google's `tokeninfo` endpoint and checks
-  `aud === CLIENT_ID`, `email === ALLOWED_EMAIL`, and `email_verified`. Successful
-  verifications are cached (`CacheService`) for the token's lifetime to keep things fast.
-  The token is kept **in memory only**, never in `localStorage`.
-- **Token expiry never loses work.** If a call returns `unauthorized`, the app silently
-  refreshes the token via Google Identity Services and retries the request once — so an
-  in-progress meal survives the ~1-hour token expiry.
+- **Password on every request.** The frontend sends your `SHARED_SECRET` in the JSON body
+  of every POST (over HTTPS, never in the URL). The Apps Script compares it to the
+  `SHARED_SECRET` Script Property and rejects mismatches with `unauthorized`. The password
+  is stored in your browser's `localStorage` so you enter it only once per device.
+- **A wrong/changed password never loses work.** If a call returns `unauthorized`, the app
+  clears the stored password, re-prompts you, and retries the request once — so an
+  in-progress meal survives (e.g. if you rotate the secret mid-session).
 - **All nutrition math is client-side.** The API returns raw rows; the browser joins meal
   items with the cached food catalog and computes `per-100g × grams / 100`.
 - **Blank ≠ 0.** Unknown nutrition values are stored as empty cells and shown as "—";
@@ -196,11 +170,11 @@ No Python or OAuth needed because the editor already runs as you.
 
 | Symptom | Likely cause / fix |
 |---|---|
-| Button does nothing / `origin_mismatch` | The current origin isn't an Authorized JavaScript origin (check scheme/host/port, no trailing slash). Wait for propagation. |
-| `{"ok":false,"error":"unauthorized"}` for your own account | `CLIENT_ID` / `ALLOWED_EMAIL` script properties not set, or `config.js` Client ID doesn't match the one in Script Properties. |
-| `{"ok":false,"error":"sheet_missing"}` | Run `setupSheet()` in the Apps Script editor. |
+| App keeps asking for the password / `unauthorized` | The password you typed doesn't match the `SHARED_SECRET` Script Property, or that property isn't set. Set it, redeploy a **new version** (see above), and try again. |
+| Nothing loads / network error in the app | `API_URL` in `config.js` is wrong or points at an old deployment. Re-copy the `/exec` URL. |
+| `{"ok":false,"error":"sheet_missing"}` | Run `setupSheet()` in the Apps Script editor (remember: run it twice — the first run only authorizes). |
 | Edits to `Code.gs` have no effect | You created a *new* deployment instead of a *new version* of the existing one (see above). |
-| Another Google account can't be refused to test | Sign in with a different account — the app should reject it with `unauthorized`. That's the expected pass. |
+| Wrong password is rejected | Type a wrong password on purpose — the app should refuse it and re-prompt. That's the expected pass. |
 
 ## Extending it later
 
