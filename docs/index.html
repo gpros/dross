@@ -1,0 +1,51 @@
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#4f46e5" />
+<title>Food Tracker</title>
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="icon" href="icon.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="icon.svg" />
+<link rel="stylesheet" href="styles.css" />
+
+<!-- Google Identity Services (One Tap + Sign-in button). No build step. -->
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+
+<!-- Sign-in screen: shown until authenticated. -->
+<div id="signin-screen" class="signin-screen" hidden>
+  <div class="signin-card">
+    <div class="signin-logo" aria-hidden="true">🍽️</div>
+    <h1>Food Tracker</h1>
+    <p class="muted">Sign in with your Google account to continue.</p>
+    <div id="gsi-button"></div>
+    <p id="signin-status" class="muted small" role="status" aria-live="polite"></p>
+  </div>
+</div>
+
+<!-- App shell: shown once authenticated. -->
+<div id="app" class="app" hidden>
+  <main class="views">
+    <section id="view-log" class="view" data-view="log"></section>
+    <section id="view-foods" class="view" data-view="foods" hidden></section>
+    <section id="view-history" class="view" data-view="history" hidden></section>
+  </main>
+
+  <nav class="tabbar" role="tablist" aria-label="Views">
+    <button class="tab" data-tab="log" role="tab" aria-selected="true">
+      <span class="tab-icon" aria-hidden="true">➕</span><span class="tab-label">Log</span>
+    </button>
+    <button class="tab" data-tab="foods" role="tab" aria-selected="false">
+      <span class="tab-icon" aria-hidden="true">📋</span><span class="tab-label">Foods</span>
+    </button>
+    <button class="tab" data-tab="history" role="tab" aria-selected="false">
+      <span class="tab-icon" aria-hidden="true">🕘</span><span class="tab-label">History</span>
+    </button>
+  </nav>
+</div>
+
+<!-- Toast host -->
+<div id="toast-host" class="toast-host" aria-live="polite" aria-atomic="true"></div>
+
+<!-- Modal host (targets editor, food editor, quantity prompt) -->
+<div id="modal-host" class="modal-host" hidden></div>
+
+<script type="module" src="app.js"></script>
