@@ -11,12 +11,10 @@ const PAGE_SIZE = 20;
 
 export function createHistoryView(ctx) {
   const root = document.getElementById("view-history");
-  let meals = [];
-  let hasMore = false;
-  let nextBefore = null;
+  // Meals come from the shared cache (loaded once at startup via getBootstrap). This view
+  // only fetches when the user asks for older meals via "Load more".
   let loading = false;
   let loadError = false;
-  let loadedVersion = -1; // meals version last fetched (see state.getMealsVersion)
 
   function mealKcal(meal) {
     const t = itemsTotals(meal.items);
@@ -48,6 +46,7 @@ export function createHistoryView(ctx) {
 
   function renderView() {
     clear(root);
+    const meals = state.getRecentMeals();
 
     if (loadError && !meals.length) {
       root.appendChild(el("div", { class: "error" }, [
@@ -73,7 +72,7 @@ export function createHistoryView(ctx) {
       root.appendChild(el("div", { class: "day-group card" }, [header, ...mealNodes]));
     });
 
-    if (hasMore) {
+    if (state.getMealsHasMore()) {
       const moreBtn = el("button", {
         class: "btn block", text: loading ? "Loading…" : "Load more",
         onclick: () => loadMore(moreBtn),
@@ -84,14 +83,13 @@ export function createHistoryView(ctx) {
   }
 
   async function loadMore(btn) {
-    if (loading || !hasMore) return;
+    if (loading || !state.getMealsHasMore()) return;
     loading = true;
+    loadError = false;
     if (btn) { btn.disabled = true; btn.textContent = "Loading…"; }
     try {
-      const data = await api.getMeals({ limit: PAGE_SIZE, before: nextBefore });
-      meals = meals.concat(data.meals || []);
-      hasMore = !!data.hasMore;
-      nextBefore = data.nextBefore;
+      const data = await api.getMeals({ limit: PAGE_SIZE, before: state.getMealsNextBefore() });
+      state.appendOlderMeals(data.meals || [], data.hasMore, data.nextBefore);
     } catch (err) {
       loadError = true;
     } finally {
@@ -100,30 +98,9 @@ export function createHistoryView(ctx) {
     }
   }
 
-  async function show() {
-    // Reuse the already-loaded history when nothing changed since — no backend call on a
-    // plain tab switch. Saving a meal bumps the version, forcing a refresh here.
-    if (!loadError && loadedVersion !== -1 && loadedVersion === state.getMealsVersion()) {
-      renderView();
-      return;
-    }
-    clear(root);
-    root.appendChild(el("div", { class: "loading", text: "Loading…" }));
-    meals = [];
-    hasMore = false;
-    nextBefore = null;
-    loadError = false;
-    try {
-      // Ensure settings + catalog are available for day headers and totals.
-      await Promise.all([state.loadSettings(), state.loadFoods()]);
-      const data = await api.getMeals({ limit: PAGE_SIZE });
-      meals = data.meals || [];
-      hasMore = !!data.hasMore;
-      nextBefore = data.nextBefore;
-      loadedVersion = state.getMealsVersion();
-    } catch (err) {
-      loadError = true;
-    }
+  // Renders from the shared cache — foods, settings, and the recent meal window were all
+  // loaded once at startup, so opening this tab makes no network call.
+  function show() {
     renderView();
   }
 

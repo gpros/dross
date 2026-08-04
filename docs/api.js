@@ -98,6 +98,7 @@ function messageFor(code) {
 
 // ---- Named endpoint wrappers ----
 
+export const getBootstrap = (opts = {}) => postAction("getBootstrap", opts);
 export const getFoods = () => postAction("getFoods");
 export const addFood = (food) => postAction("addFood", food);
 export const updateFood = (patch) => postAction("updateFood", patch);

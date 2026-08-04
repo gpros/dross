@@ -8,7 +8,7 @@ import {
 } from "../ui.js";
 import { itemsTotals, mealsTotals, combineTotals } from "../nutrition.js";
 import { openTargetsEditor, promptQuantity } from "../editors.js";
-import { fetchMealsSince, startOfTodayIso, frequentFoods } from "../meals.js";
+import { localDayKey, frequentFoods } from "../meals.js";
 
 export function createLogView(ctx) {
   const root = document.getElementById("view-log");
@@ -177,15 +177,15 @@ export function createLogView(ctx) {
     saveBtn.disabled = true;
     saveBtn.textContent = "Saving…";
     try {
-      await api.addMeal({ timestamp: iso, note, items });
-      state.bumpMealsVersion();   // meals changed → History (and this view) should refresh
+      const created = await api.addMeal({ timestamp: iso, note, items });
+      state.prependMeal(created); // add to the shared cache + bump version (no refetch)
       // A brand-new food may have been created — refresh the catalog.
       const hadNew = draft.items.some((it) => !it.food_id);
       if (hadNew) { try { await state.loadFoods(true); } catch (_) {} }
 
       state.resetDraft();
       toast("Meal logged");
-      await reloadMealData();     // refresh today + recent
+      reloadMealData();           // re-derive today + recent from the updated cache
       renderView();               // full re-render resets the form
     } catch (err) {
       // Keep everything on screen; let the user retry.
@@ -195,22 +195,13 @@ export function createLogView(ctx) {
     }
   }
 
-  // ---- Data loading ----
-  async function reloadMealData() {
+  // ---- Data (derived from the shared cache loaded once at startup) ----
+  function reloadMealData() {
+    recentMeals = state.getRecentMeals();
+    const todayKey = localDayKey(new Date().toISOString());
+    todaysMeals = recentMeals.filter((m) => localDayKey(m.timestamp) === todayKey);
+    loadedVersion = state.getMealsVersion();
     loadError = false;
-    try {
-      const [todayRes, recentRes] = await Promise.all([
-        fetchMealsSince(startOfTodayIso(), 50),
-        api.getMeals({ limit: 80 }),
-      ]);
-      todaysMeals = todayRes.meals;
-      recentMeals = recentRes.meals || [];
-      loadedVersion = state.getMealsVersion();
-    } catch (err) {
-      loadError = true;
-      todaysMeals = [];
-      recentMeals = [];
-    }
   }
 
   // ---- Full render ----
@@ -282,19 +273,12 @@ export function createLogView(ctx) {
   }
 
   // ---- Public API ----
-  async function show() {
+  function show() {
     // Ensure a draft exists.
     if (!state.getDraft().timestamp) state.resetDraft();
-    // Reuse cached meal data when nothing has changed since we last loaded it — avoids
-    // re-hitting the backend on every tab switch. A saved meal bumps the version.
-    if (!loadError && loadedVersion === state.getMealsVersion()) {
-      renderView();
-      return;
-    }
-    // Show a lightweight loading state while (re)fetching.
-    clear(root);
-    root.appendChild(el("div", { class: "loading", text: "Loading…" }));
-    await reloadMealData();
+    // Re-derive from the shared cache only when meals changed since last render (a saved
+    // meal bumps the version). No network here — everything was loaded once at startup.
+    if (loadedVersion !== state.getMealsVersion()) reloadMealData();
     renderView();
   }
 

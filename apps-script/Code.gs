@@ -268,6 +268,7 @@ function createFood(payload) {
 // ---- Actions ------------------------------------------------------------------
 
 var ACTIONS = {
+  getBootstrap: getBootstrap,
   getFoods: getFoods,
   addFood: addFood,
   updateFood: updateFood,
@@ -276,6 +277,22 @@ var ACTIONS = {
   getSettings: getSettings,
   updateSettings: updateSettings
 };
+
+// One-shot startup payload: foods + settings + a recent window of meals, so the client
+// loads everything in a single request instead of three separate round trips. Composes the
+// existing handlers (one script invocation reads each sheet once).
+function getBootstrap(payload) {
+  var limit = parseInt(payload && payload.limit, 10);
+  if (isNaN(limit) || limit <= 0) limit = 100;
+  var mealsResult = getMeals({ limit: limit });
+  return {
+    foods: getFoods().foods,
+    settings: getSettings().settings,
+    meals: mealsResult.meals,
+    hasMore: mealsResult.hasMore,
+    nextBefore: mealsResult.nextBefore
+  };
+}
 
 function getFoods() {
   var table = readTable('Foods');

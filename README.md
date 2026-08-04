@@ -156,6 +156,11 @@ No Python or OAuth needed because the editor already runs as you.
 - **A wrong/changed password never loses work.** If a call returns `unauthorized`, the app
   clears the stored password, re-prompts you, and retries the request once — so an
   in-progress meal survives (e.g. if you rotate the secret mid-session).
+- **One request on startup.** The app calls a single `getBootstrap` action that returns
+  foods + settings + a recent window of meals together, then serves every tab from that
+  in-memory cache (no per-tab fetches). Saving a meal updates the cache locally. If the
+  deployed backend predates `getBootstrap`, the app automatically falls back to fetching the
+  pieces separately — so it keeps working even before you redeploy.
 - **All nutrition math is client-side.** The API returns raw rows; the browser joins meal
   items with the cached food catalog and computes `per-100g × grams / 100`.
 - **Blank ≠ 0.** Unknown nutrition values are stored as empty cells and shown as "—";

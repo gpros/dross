@@ -61,7 +61,7 @@ async function startApp() {
   }
 
   try {
-    await Promise.all([state.loadFoods(true), state.loadSettings(true)]);
+    await state.loadBootstrap(); // one request: foods + settings + recent meals
   } catch (err) {
     toast("Couldn't reach the server. Check config.js / your connection.", { error: true });
   }
