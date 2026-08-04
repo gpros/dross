@@ -16,6 +16,7 @@ export function createLogView(ctx) {
   let todaysMeals = [];   // saved meals for today (whole-day boundary)
   let recentMeals = [];   // a page of recent meals for quick-picks / repeat
   let loadError = false;
+  let loadedVersion = -1; // meals version this view last fetched (see state.getMealsVersion)
 
   // Sub-containers we re-render independently.
   let summaryBox, searchInput, resultsEl, chipsEl, itemsEl, saveBtn;
@@ -177,6 +178,7 @@ export function createLogView(ctx) {
     saveBtn.textContent = "Saving…";
     try {
       await api.addMeal({ timestamp: iso, note, items });
+      state.bumpMealsVersion();   // meals changed → History (and this view) should refresh
       // A brand-new food may have been created — refresh the catalog.
       const hadNew = draft.items.some((it) => !it.food_id);
       if (hadNew) { try { await state.loadFoods(true); } catch (_) {} }
@@ -203,6 +205,7 @@ export function createLogView(ctx) {
       ]);
       todaysMeals = todayRes.meals;
       recentMeals = recentRes.meals || [];
+      loadedVersion = state.getMealsVersion();
     } catch (err) {
       loadError = true;
       todaysMeals = [];
@@ -282,7 +285,13 @@ export function createLogView(ctx) {
   async function show() {
     // Ensure a draft exists.
     if (!state.getDraft().timestamp) state.resetDraft();
-    // Show a lightweight loading state on first open.
+    // Reuse cached meal data when nothing has changed since we last loaded it — avoids
+    // re-hitting the backend on every tab switch. A saved meal bumps the version.
+    if (!loadError && loadedVersion === state.getMealsVersion()) {
+      renderView();
+      return;
+    }
+    // Show a lightweight loading state while (re)fetching.
     clear(root);
     root.appendChild(el("div", { class: "loading", text: "Loading…" }));
     await reloadMealData();

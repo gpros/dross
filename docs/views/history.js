@@ -16,6 +16,7 @@ export function createHistoryView(ctx) {
   let nextBefore = null;
   let loading = false;
   let loadError = false;
+  let loadedVersion = -1; // meals version last fetched (see state.getMealsVersion)
 
   function mealKcal(meal) {
     const t = itemsTotals(meal.items);
@@ -100,6 +101,12 @@ export function createHistoryView(ctx) {
   }
 
   async function show() {
+    // Reuse the already-loaded history when nothing changed since — no backend call on a
+    // plain tab switch. Saving a meal bumps the version, forcing a refresh here.
+    if (!loadError && loadedVersion !== -1 && loadedVersion === state.getMealsVersion()) {
+      renderView();
+      return;
+    }
     clear(root);
     root.appendChild(el("div", { class: "loading", text: "Loading…" }));
     meals = [];
@@ -113,6 +120,7 @@ export function createHistoryView(ctx) {
       meals = data.meals || [];
       hasMore = !!data.hasMore;
       nextBefore = data.nextBefore;
+      loadedVersion = state.getMealsVersion();
     } catch (err) {
       loadError = true;
     }

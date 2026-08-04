@@ -21,16 +21,26 @@ export function getFoodById(id) { return state.foodsById.get(String(id)) || null
 export function getSettings() { return state.settings; }
 export function getDraft() { return state.draft; }
 
+// Bumped whenever meal data changes (a meal is saved). Views compare against the version
+// they last rendered so they can reuse cached data on tab switches and only re-fetch when
+// something actually changed — avoids hitting the (slow) backend on every tab tap.
+let mealsVersion = 0;
+export function getMealsVersion() { return mealsVersion; }
+export function bumpMealsVersion() { mealsVersion++; return mealsVersion; }
+
+let foodsLoaded = false;
+
 function indexFoods() {
   state.foodsById = new Map(state.foods.map((f) => [String(f.id), f]));
   state.foods.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
 }
 
 export async function loadFoods(force = false) {
-  if (state.foods.length && !force) return state.foods;
+  if (foodsLoaded && !force) return state.foods;
   const data = await api.getFoods();
   state.foods = data.foods || [];
   indexFoods();
+  foodsLoaded = true;
   return state.foods;
 }
 
