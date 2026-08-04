@@ -90,10 +90,30 @@ export async function loadBootstrap() {
   }
 }
 
+function sortMealsNewestFirst() {
+  state.meals.sort((a, b) => (a.timestamp < b.timestamp ? 1 : a.timestamp > b.timestamp ? -1 : 0));
+}
+
 // Prepend a just-saved meal to the cache (avoids a refetch) and bump the version so views
 // re-render. `meal` is the object returned by addMeal ({ id, timestamp, note, items }).
 export function prependMeal(meal) {
   state.meals.unshift(meal);
+  sortMealsNewestFirst();
+  bumpMealsVersion();
+}
+
+// Replace an edited meal in the cache (by id); re-sort in case the timestamp changed.
+export function replaceMeal(meal) {
+  const i = state.meals.findIndex((m) => String(m.id) === String(meal.id));
+  if (i >= 0) state.meals[i] = meal;
+  else state.meals.unshift(meal);
+  sortMealsNewestFirst();
+  bumpMealsVersion();
+}
+
+// Remove a deleted meal from the cache (by id).
+export function removeMeal(id) {
+  state.meals = state.meals.filter((m) => String(m.id) !== String(id));
   bumpMealsVersion();
 }
 

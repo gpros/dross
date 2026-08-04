@@ -19,7 +19,8 @@ export function createFoodsView(ctx) {
 
   function macrosLine(food) {
     const fmt = (v, unit) => (v == null ? "—" : formatNum(v) + unit);
-    return `${fmt(food.kcal_100g, "")} kcal · P ${fmt(food.protein_100g, "")} · C ${fmt(food.carbs_100g, "")} · F ${fmt(food.fat_100g, "")} /100g`;
+    const base = `${fmt(food.kcal_100g, "")} kcal · P ${fmt(food.protein_100g, "")} · C ${fmt(food.carbs_100g, "")} · F ${fmt(food.fat_100g, "")} /100g`;
+    return food.serving_g != null ? `${base} · serv ${formatNum(food.serving_g)} g` : base;
   }
 
   function renderList(listEl) {

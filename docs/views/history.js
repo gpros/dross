@@ -6,6 +6,7 @@ import * as api from "../api.js";
 import { el, clear, renderTargetBars } from "../ui.js";
 import { mealsTotals, itemsTotals } from "../nutrition.js";
 import { groupByDay, timeLabel } from "../meals.js";
+import { openMealEditor } from "../editors.js";
 
 const PAGE_SIZE = 20;
 
@@ -36,12 +37,17 @@ export function createHistoryView(ctx) {
     const children = [
       el("div", {}, [
         el("span", { class: "meal-kcal", text: mealKcal(meal) }),
-        el("span", { class: "meal-time", text: timeLabel(meal.timestamp) }),
+        el("span", { class: "meal-time", text: timeLabel(meal.timestamp) + "  ✎" }),
       ]),
       itemsList,
     ];
     if (meal.note) children.push(el("div", { class: "meal-note", text: meal.note }));
-    return el("div", { class: "meal" }, children);
+    return el("div", {
+      class: "meal editable",
+      role: "button",
+      "aria-label": "Edit meal",
+      onclick: () => openMealEditor(meal, { onSaved: renderView, onDeleted: renderView }),
+    }, children);
   }
 
   function renderView() {

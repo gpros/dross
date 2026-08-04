@@ -79,7 +79,7 @@ export function createLogView(ctx) {
 
   // ---- Add-to-draft helpers ----
   async function addFoodToDraft(food) {
-    const qty = await promptQuantity(food.name);
+    const qty = await promptQuantity(food); // pass the food so serving chips can show
     if (qty == null) return;
     state.addDraftItem({ food_id: food.id, name: food.name, quantity_g: qty });
     searchInput.value = "";
@@ -89,7 +89,7 @@ export function createLogView(ctx) {
   }
 
   async function addNewFoodToDraft(typedName) {
-    const qty = await promptQuantity(typedName.trim());
+    const qty = await promptQuantity({ name: typedName.trim() });
     if (qty == null) return;
     // No food_id yet — it will be created server-side on save (blank nutrition).
     state.addDraftItem({ food_name: typedName.trim(), name: typedName.trim(), quantity_g: qty });

@@ -136,6 +136,10 @@ code does **not** change what the URL serves.
 
 (The frontend has no such issue — GitHub Pages redeploys automatically on push.)
 
+> **When new features add a Sheet column** (e.g. `serving_g` for default serving sizes):
+> after redeploying, also **run `setupSheet()` again** from the editor. It's idempotent and
+> now adds any missing columns to your existing tabs — no data is touched.
+
 ---
 
 ## Bulk-importing an existing food list
@@ -161,6 +165,10 @@ No Python or OAuth needed because the editor already runs as you.
   in-memory cache (no per-tab fetches). Saving a meal updates the cache locally. If the
   deployed backend predates `getBootstrap`, the app automatically falls back to fetching the
   pieces separately — so it keeps working even before you redeploy.
+- **Edit or delete a logged meal.** Tap any meal in **History** to change its time, note, or
+  item quantities, add/remove items, or delete it (`updateMeal` / `deleteMeal`).
+- **Default serving sizes.** Give a food an optional `serving_g`; when set, the quantity prompt
+  offers ½/1/2/3-serving chips that fill in the grams. Storage stays in grams.
 - **All nutrition math is client-side.** The API returns raw rows; the browser joins meal
   items with the cached food catalog and computes `per-100g × grams / 100`.
 - **Blank ≠ 0.** Unknown nutrition values are stored as empty cells and shown as "—";

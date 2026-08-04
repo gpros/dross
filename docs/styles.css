@@ -311,6 +311,8 @@ textarea { min-height: 60px; resize: vertical; }
   border-bottom: 1px solid var(--border);
 }
 .meal:last-child { border-bottom: none; }
+.meal.editable { cursor: pointer; }
+.meal.editable:hover { background: var(--surface-2); border-radius: 8px; }
 .meal .meal-time { font-size: .8rem; color: var(--muted); }
 .meal .meal-kcal { float: right; font-size: .8rem; color: var(--muted); }
 .meal .meal-items { margin: 4px 0 0; }
@@ -360,6 +362,8 @@ textarea { min-height: 60px; resize: vertical; }
   background: var(--surface);
   width: 100%;
   max-width: 480px;
+  max-height: 88vh;
+  overflow-y: auto;
   border-radius: 18px 18px 0 0;
   padding: 20px 16px calc(20px + env(safe-area-inset-bottom, 0px));
   box-shadow: var(--shadow);

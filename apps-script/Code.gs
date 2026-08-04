@@ -20,7 +20,7 @@
 // ---- Sheet / schema constants -------------------------------------------------
 
 var SHEETS = {
-  Foods: ['id', 'name', 'kcal_100g', 'protein_100g', 'carbs_100g', 'fat_100g', 'created_at'],
+  Foods: ['id', 'name', 'kcal_100g', 'protein_100g', 'carbs_100g', 'fat_100g', 'serving_g', 'created_at'],
   Meals: ['id', 'timestamp', 'note'],
   MealItems: ['id', 'meal_id', 'food_id', 'quantity_g'],
   Settings: ['key', 'value']
@@ -190,6 +190,19 @@ function normNutrient(payload, field) {
 
 function trimStr(v) { return v === null || v === undefined ? '' : String(v).trim(); }
 
+/**
+ * Normalize an incoming serving_g field. Same present/clear/set semantics as normNutrient,
+ * but the value must be strictly positive (a 0 g serving is meaningless).
+ */
+function normServing(payload) {
+  if (!payload.hasOwnProperty('serving_g')) return { present: false, value: null };
+  var v = payload.serving_g;
+  if (v === null || v === '' || v === undefined) return { present: true, value: null };
+  var n = (typeof v === 'number') ? v : Number(String(v).replace(',', '.').trim());
+  if (isNaN(n) || n <= 0) clientFail('bad_serving');
+  return { present: true, value: n };
+}
+
 // ---- Concurrency --------------------------------------------------------------
 
 function withLock(fn) {
@@ -211,7 +224,8 @@ function foodOut(row) {
     kcal_100g: cellToNum(row.kcal_100g),
     protein_100g: cellToNum(row.protein_100g),
     carbs_100g: cellToNum(row.carbs_100g),
-    fat_100g: cellToNum(row.fat_100g)
+    fat_100g: cellToNum(row.fat_100g),
+    serving_g: cellToNum(row.serving_g)
   };
 }
 
@@ -243,6 +257,7 @@ function createFood(payload) {
   var protein = normNutrient(payload, 'protein_100g');
   var carbs = normNutrient(payload, 'carbs_100g');
   var fat = normNutrient(payload, 'fat_100g');
+  var serving = normServing(payload);
 
   var id = Utilities.getUuid();
   appendRow('Foods', {
@@ -252,6 +267,7 @@ function createFood(payload) {
     protein_100g: protein.present && protein.value !== null ? protein.value : '',
     carbs_100g: carbs.present && carbs.value !== null ? carbs.value : '',
     fat_100g: fat.present && fat.value !== null ? fat.value : '',
+    serving_g: serving.present && serving.value !== null ? serving.value : '',
     created_at: new Date().toISOString()
   });
 
@@ -261,7 +277,8 @@ function createFood(payload) {
     kcal_100g: kcal.present ? kcal.value : null,
     protein_100g: protein.present ? protein.value : null,
     carbs_100g: carbs.present ? carbs.value : null,
-    fat_100g: fat.present ? fat.value : null
+    fat_100g: fat.present ? fat.value : null,
+    serving_g: serving.present ? serving.value : null
   };
 }
 
@@ -273,6 +290,8 @@ var ACTIONS = {
   addFood: addFood,
   updateFood: updateFood,
   addMeal: addMeal,
+  updateMeal: updateMeal,
+  deleteMeal: deleteMeal,
   getMeals: getMeals,
   getSettings: getSettings,
   updateSettings: updateSettings
@@ -330,6 +349,9 @@ function updateFood(payload) {
       updates[field] = n.value === null ? '' : n.value; // null -> clear, number -> set (0 ok)
     });
 
+    var serving = normServing(payload);
+    if (serving.present) updates.serving_g = serving.value === null ? '' : serving.value;
+
     // Write changed cells individually so numbers stay numbers (locale-safe).
     var sheet = table.sheet;
     Object.keys(updates).forEach(function (header) {
@@ -343,6 +365,78 @@ function updateFood(payload) {
   });
 }
 
+/**
+ * Resolve meal-item inputs to concrete foods, creating new foods (blank nutrition) for any
+ * `food_name` not yet in the catalog. Returns [{food_id, name, quantity_g}]. Shared by
+ * addMeal and updateMeal. `foodTable` is a readTable('Foods') result (mutated so repeated
+ * new names within one request dedupe).
+ */
+function resolveMealItems(items, foodTable) {
+  var resolved = [];
+  for (var i = 0; i < items.length; i++) {
+    var it = items[i];
+    var qty = (typeof it.quantity_g === 'number')
+      ? it.quantity_g
+      : Number(String(it.quantity_g).replace(',', '.').trim());
+    if (isNaN(qty) || qty <= 0) clientFail('bad_quantity');
+
+    var foodRow = null;
+    if (it.food_id) {
+      foodRow = findFoodById(foodTable.rows, it.food_id);
+    }
+    if (!foodRow && it.food_name) {
+      foodRow = findFoodByName(foodTable.rows, it.food_name);
+      if (!foodRow) {
+        var created = createFood({ name: it.food_name }); // blank nutrition
+        foodRow = { id: created.id, name: created.name };
+        foodTable.rows.push(foodRow); // so repeated new names in one meal dedupe
+      }
+    }
+    if (!foodRow) clientFail('unknown_food');
+
+    resolved.push({ food_id: foodRow.id, name: foodRow.name, quantity_g: qty });
+  }
+  return resolved;
+}
+
+/** Append MealItems rows for `resolved` items under `mealId`; return them as output items. */
+function writeMealItems(mealId, resolved) {
+  var outItems = [];
+  for (var j = 0; j < resolved.length; j++) {
+    var itemId = Utilities.getUuid();
+    appendRow('MealItems', {
+      id: itemId,
+      meal_id: mealId,
+      food_id: resolved[j].food_id,
+      quantity_g: resolved[j].quantity_g
+    });
+    outItems.push({
+      id: itemId,
+      food_id: resolved[j].food_id,
+      name: resolved[j].name,
+      quantity_g: resolved[j].quantity_g
+    });
+  }
+  return outItems;
+}
+
+/** Delete the given 1-based row numbers from a sheet (descending so indices don't shift). */
+function deleteRows(sheet, rowNums) {
+  rowNums.slice().sort(function (a, b) { return b - a; }).forEach(function (n) {
+    sheet.deleteRow(n);
+  });
+}
+
+/** Row numbers (1-based) of MealItems belonging to a meal. */
+function mealItemRows(mealId) {
+  var table = readTable('MealItems');
+  var rows = [];
+  table.rows.forEach(function (r) {
+    if (String(r.meal_id) === String(mealId)) rows.push(r.__row);
+  });
+  return { sheet: table.sheet, rows: rows };
+}
+
 function addMeal(payload) {
   return withLock(function () {
     var items = payload.items;
@@ -353,55 +447,82 @@ function addMeal(payload) {
     var note = trimStr(payload.note);
 
     var foodTable = readTable('Foods');
-
-    // Resolve every item to a food_id, creating new foods (blank nutrition) as needed.
-    var resolved = [];
-    for (var i = 0; i < items.length; i++) {
-      var it = items[i];
-      var qty = (typeof it.quantity_g === 'number')
-        ? it.quantity_g
-        : Number(String(it.quantity_g).replace(',', '.').trim());
-      if (isNaN(qty) || qty <= 0) clientFail('bad_quantity');
-
-      var foodRow = null;
-      if (it.food_id) {
-        foodRow = findFoodById(foodTable.rows, it.food_id);
-      }
-      if (!foodRow && it.food_name) {
-        foodRow = findFoodByName(foodTable.rows, it.food_name);
-        if (!foodRow) {
-          var created = createFood({ name: it.food_name }); // blank nutrition
-          foodRow = { id: created.id, name: created.name };
-          foodTable.rows.push(foodRow); // so repeated new names in one meal dedupe
-        }
-      }
-      if (!foodRow) clientFail('unknown_food');
-
-      resolved.push({ food_id: foodRow.id, name: foodRow.name, quantity_g: qty });
-    }
+    var resolved = resolveMealItems(items, foodTable);
 
     // Append the meal, then its items.
     var mealId = Utilities.getUuid();
     appendRow('Meals', { id: mealId, timestamp: timestamp, note: note });
-
-    var outItems = [];
-    for (var j = 0; j < resolved.length; j++) {
-      var itemId = Utilities.getUuid();
-      appendRow('MealItems', {
-        id: itemId,
-        meal_id: mealId,
-        food_id: resolved[j].food_id,
-        quantity_g: resolved[j].quantity_g
-      });
-      outItems.push({
-        id: itemId,
-        food_id: resolved[j].food_id,
-        name: resolved[j].name,
-        quantity_g: resolved[j].quantity_g
-      });
-    }
+    var outItems = writeMealItems(mealId, resolved);
 
     return { id: mealId, timestamp: timestamp, note: note, items: outItems };
+  });
+}
+
+function deleteMeal(payload) {
+  return withLock(function () {
+    var id = trimStr(payload.id);
+    if (!id) clientFail('bad_request');
+
+    var mealTable = readTable('Meals');
+    var meal = mealTable.rows.filter(function (r) { return String(r.id) === id; })[0];
+    if (!meal) clientFail('not_found');
+
+    var items = mealItemRows(id);
+    deleteRows(items.sheet, items.rows);
+    mealTable.sheet.deleteRow(meal.__row);
+    return { id: id };
+  });
+}
+
+function updateMeal(payload) {
+  return withLock(function () {
+    var id = trimStr(payload.id);
+    if (!id) clientFail('bad_request');
+
+    var mealTable = readTable('Meals');
+    var meal = mealTable.rows.filter(function (r) { return String(r.id) === id; })[0];
+    if (!meal) clientFail('not_found');
+    var sheet = mealTable.sheet;
+
+    // Replace items if provided: resolve, delete old MealItems, write new ones.
+    var outItems = null;
+    if (payload.hasOwnProperty('items')) {
+      if (!payload.items || !payload.items.length) clientFail('empty_meal');
+      var resolved = resolveMealItems(payload.items, readTable('Foods'));
+      var old = mealItemRows(id);
+      deleteRows(old.sheet, old.rows);
+      outItems = writeMealItems(id, resolved);
+    }
+
+    // Update timestamp / note cells when present.
+    if (payload.hasOwnProperty('timestamp')) {
+      var ts = trimStr(payload.timestamp) || new Date().toISOString();
+      sheet.getRange(meal.__row, colIndex(mealTable.headers, 'timestamp') + 1).setValue(ts);
+    }
+    if (payload.hasOwnProperty('note')) {
+      sheet.getRange(meal.__row, colIndex(mealTable.headers, 'note') + 1).setValue(trimStr(payload.note));
+    }
+
+    // Return the canonical, updated meal (re-read row; attach items).
+    var refreshed = readTable('Meals').rows.filter(function (r) { return String(r.id) === id; })[0];
+    if (outItems === null) {
+      var foodNameById = {};
+      readTable('Foods').rows.forEach(function (f) { foodNameById[String(f.id)] = String(f.name); });
+      outItems = mealItemRows(id).rows.length
+        ? readTable('MealItems').rows
+            .filter(function (r) { return String(r.meal_id) === id; })
+            .map(function (r) {
+              return { id: String(r.id), food_id: String(r.food_id),
+                name: foodNameById[String(r.food_id)] || '(unknown)', quantity_g: cellToNum(r.quantity_g) };
+            })
+        : [];
+    }
+    return {
+      id: id,
+      timestamp: tsToIso(refreshed.timestamp),
+      note: refreshed.note === '' ? '' : String(refreshed.note),
+      items: outItems
+    };
   });
 }
 
@@ -519,6 +640,17 @@ function setupSheet() {
     if (!hasHeaders) {
       sh.getRange(1, 1, 1, headers.length).setValues([headers]);
       sh.setFrozenRows(1);
+    } else {
+      // Existing tab: append any schema columns it doesn't have yet (e.g. serving_g added
+      // in a later version). Reads are header-driven, so appended position is fine.
+      var existing = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0]
+        .map(function (h) { return String(h).trim(); });
+      headers.forEach(function (h) {
+        if (existing.indexOf(h) === -1) {
+          sh.getRange(1, sh.getLastColumn() + 1).setValue(h);
+          existing.push(h);
+        }
+      });
     }
   });
   // Remove the default "Sheet1" if it is empty and not one of ours.

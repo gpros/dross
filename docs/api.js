@@ -90,8 +90,11 @@ function messageFor(code) {
     case "bad_nutrient": return "Nutrition values must be zero or positive numbers.";
     case "bad_target": return "Targets must be zero or positive numbers.";
     case "bad_quantity": return "Quantity must be a positive number of grams.";
+    case "bad_serving": return "Serving size must be a positive number of grams.";
     case "empty_meal": return "Add at least one item to the meal.";
+    case "not_found": return "That item no longer exists.";
     case "sheet_missing": return "The spreadsheet isn't set up yet (run setupSheet).";
+    case "unknown_action": return "This needs the latest backend — redeploy the Apps Script (new version).";
     default: return "Something went wrong. Please try again.";
   }
 }
@@ -103,6 +106,8 @@ export const getFoods = () => postAction("getFoods");
 export const addFood = (food) => postAction("addFood", food);
 export const updateFood = (patch) => postAction("updateFood", patch);
 export const addMeal = (meal) => postAction("addMeal", meal);
+export const updateMeal = (meal) => postAction("updateMeal", meal);
+export const deleteMeal = (id) => postAction("deleteMeal", { id });
 export const getMeals = (opts = {}) => postAction("getMeals", opts);
 export const getSettings = () => postAction("getSettings");
 export const updateSettings = (targets) => postAction("updateSettings", targets);
