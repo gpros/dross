@@ -135,16 +135,17 @@ function targetsAreSet(settings) {
 export function renderTargetBars(totals, settings, opts = {}) {
   const { compact = false, provisional = false, onEditTargets = null, onMissingClick = null } = opts;
 
-  // No targets yet -> prompt.
+  // No targets yet -> prompt. Only show the (actionable) button where a handler was given,
+  // i.e. the Log view. Read-only contexts like History day headers pass no handler → nothing.
   if (!targetsAreSet(settings)) {
-    const prompt = el("div", { class: "summary empty-targets" }, [
+    if (!onEditTargets) return document.createTextNode("");
+    return el("div", { class: "summary empty-targets" }, [
       el("button", {
         class: "btn small primary",
         text: "Set your daily targets",
-        onclick: onEditTargets || (() => {}),
+        onclick: onEditTargets,
       }),
     ]);
-    return prompt;
   }
 
   const rows = MACROS.map((macro) => {
