@@ -26,7 +26,7 @@ export function createFoodsView(ctx) {
   function renderList(listEl) {
     clear(listEl);
     const q = normalizeText(query);
-    let foods = state.getFoods();
+    let foods = state.getFoods().filter((f) => !f.is_dish); // dishes live in the Dishes tab
     if (q) foods = foods.filter((f) => normalizeText(f.name).includes(q));
     if (incompleteOnly) foods = foods.filter(foodIsIncomplete);
 

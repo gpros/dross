@@ -3,7 +3,8 @@
 
 import * as api from "./api.js";
 import * as state from "./state.js";
-import { el, clear, openModal, closeModal, parseDecimal, toast, normalizeText } from "./ui.js";
+import { el, clear, openModal, closeModal, parseDecimal, toast, normalizeText, formatNum } from "./ui.js";
+import { itemsTotals } from "./nutrition.js";
 
 const NUTRIENT_FIELDS = [
   { key: "kcal_100g", label: "Calories / 100 g", unit: "kcal" },
@@ -345,6 +346,142 @@ export function openMealEditor(meal, { onSaved, onDeleted } = {}) {
 
   openModal(form);
   renderItems();
+}
+
+// ---- Dish editor (create / edit a recipe, from the Dishes tab) ----
+
+// dish: a catalog food object with { id, name, servings, recipe:[{food_id,name,quantity_g}] },
+// or null to create a new dish.
+export function openDishEditor(dish, { onSaved } = {}) {
+  const isEdit = !!dish;
+  const ingredients = (dish ? state.getRecipe(dish.id) : []).map((i) => ({
+    food_id: i.food_id, food_name: undefined, name: i.name, quantity_g: i.quantity_g,
+  }));
+
+  const nameInput = el("input", { type: "text", value: dish ? dish.name : "", autocomplete: "off" });
+  const servingsInput = el("input", {
+    type: "text", inputmode: "decimal", autocomplete: "off",
+    value: dish && dish.servings != null ? String(dish.servings) : "", placeholder: "e.g. 8",
+  });
+  const itemsEl = el("ul", { class: "items" });
+  const searchInput = el("input", { type: "search", placeholder: "Add an ingredient…", autocomplete: "off" });
+  const resultsEl = el("ul", { class: "results" });
+  const previewEl = el("div", { class: "card", style: "margin-top:10px" });
+
+  function renderPreview() {
+    clear(previewEl);
+    const totals = itemsTotals(ingredients);
+    const totalG = ingredients.reduce((s, i) => s + (Number(i.quantity_g) || 0), 0);
+    const servings = parseDecimal(servingsInput.value);
+    const geq = (m) => (totals.incomplete[m] ? "≥" : "");
+    const line = (label, factor) =>
+      `${label}: ${geq("kcal")}${formatNum(totals.kcal * factor)} kcal · ` +
+      `P ${geq("protein")}${formatNum(totals.protein * factor, 1)} · ` +
+      `C ${geq("carbs")}${formatNum(totals.carbs * factor, 1)} · ` +
+      `F ${geq("fat")}${formatNum(totals.fat * factor, 1)} g`;
+    const rows = [el("div", { class: "section-title", text: `Whole dish · ${formatNum(totalG)} g` })];
+    rows.push(el("div", { class: "small", text: line("Total", 1) }));
+    if (servings && servings > 0) {
+      rows.push(el("div", { class: "small", text: line(`Per serving (÷${formatNum(servings)})`, 1 / servings) }));
+    } else {
+      rows.push(el("div", { class: "muted small", text: "Set servings to see per-serving values." }));
+    }
+    previewEl.append(...rows);
+  }
+
+  function renderItems() {
+    clear(itemsEl);
+    if (!ingredients.length) {
+      itemsEl.appendChild(el("p", { class: "muted small", text: "No ingredients yet. Add some below." }));
+      renderPreview(); return;
+    }
+    ingredients.forEach((item, idx) => {
+      const qty = el("input", { class: "qty-input", type: "text", inputmode: "decimal", value: String(item.quantity_g), "aria-label": "Grams for " + item.name });
+      qty.addEventListener("change", () => {
+        const v = parseDecimal(qty.value);
+        if (v == null || Number.isNaN(v) || v <= 0) { qty.value = String(item.quantity_g); return; }
+        item.quantity_g = v; renderPreview();
+      });
+      itemsEl.appendChild(el("li", { class: "item" }, [
+        el("span", { class: "name", text: item.name }),
+        qty, el("span", { class: "unit", text: "g" }),
+        el("button", { class: "iconbtn", "aria-label": "Remove " + item.name, text: "✕", onclick: () => { ingredients.splice(idx, 1); renderItems(); } }),
+      ]));
+    });
+    renderPreview();
+  }
+
+  function addFromCatalog(food) {
+    ingredients.push({ food_id: food.id, name: food.name, quantity_g: food.serving_g || 100 });
+    searchInput.value = ""; renderResults(""); renderItems();
+  }
+  function addNew(name) {
+    ingredients.push({ food_name: name.trim(), name: name.trim(), quantity_g: 100 });
+    searchInput.value = ""; renderResults(""); renderItems();
+  }
+  function renderResults(query) {
+    clear(resultsEl);
+    const q = normalizeText(query);
+    if (!q) return;
+    const foods = state.getFoods().filter((f) => !f.is_dish); // ingredients are basic foods only
+    const exact = foods.some((f) => normalizeText(f.name) === q);
+    if (!exact) {
+      resultsEl.appendChild(el("li", { class: "add-new", onclick: () => addNew(query) }, [
+        el("span", { text: `Add “${query.trim()}” as new food` }), el("span", { class: "meta", text: "new" }),
+      ]));
+    }
+    foods.filter((f) => normalizeText(f.name).includes(q)).slice(0, 8).forEach((f) => {
+      resultsEl.appendChild(el("li", { onclick: () => addFromCatalog(f) }, [el("span", { text: f.name })]));
+    });
+  }
+  searchInput.addEventListener("input", () => renderResults(searchInput.value));
+  servingsInput.addEventListener("input", renderPreview);
+
+  const saveBtn = el("button", { class: "btn primary", text: "Save" });
+  saveBtn.addEventListener("click", async () => {
+    const name = nameInput.value.trim();
+    if (!name) { toast("Enter a dish name.", { error: true }); return; }
+    if (!ingredients.length) { toast("Add at least one ingredient.", { error: true }); return; }
+    const servings = parseDecimal(servingsInput.value);
+    if (Number.isNaN(servings) || (servings != null && servings <= 0)) { toast("Servings must be a positive number.", { error: true }); return; }
+
+    const payloadIngredients = ingredients.map((it) =>
+      it.food_id ? { food_id: it.food_id, quantity_g: it.quantity_g } : { food_name: it.name, quantity_g: it.quantity_g });
+
+    saveBtn.disabled = true; saveBtn.textContent = "Saving…";
+    try {
+      const saved = isEdit
+        ? await api.updateDish({ id: dish.id, name, servings, ingredients: payloadIngredients })
+        : await api.addDish({ name, servings, ingredients: payloadIngredients });
+      await state.loadFoods(true);          // pick up the dish food + any new ingredient foods
+      state.setRecipe(saved.id, saved.ingredients); // set recipe + recompute the dish
+      closeModal();
+      toast(isEdit ? "Dish updated" : "Dish created");
+      if (onSaved) onSaved(saved);
+    } catch (err) {
+      saveBtn.disabled = false; saveBtn.textContent = "Save";
+      toast(err.message || "Could not save the dish.", { error: true });
+    }
+  });
+
+  const form = el("div", {}, [
+    el("h2", { text: isEdit ? "Edit dish" : "New dish" }),
+    el("label", { class: "field" }, [el("span", { text: "Name" }), nameInput]),
+    el("label", { class: "field" }, [el("span", { text: "Servings (optional)" }), servingsInput]),
+    el("div", { class: "section-title", text: "Ingredients" }),
+    itemsEl,
+    el("label", { class: "field", style: "margin-top:10px" }, [el("span", { text: "Add ingredient" }), searchInput]),
+    resultsEl,
+    previewEl,
+    el("div", { class: "actions" }, [
+      el("button", { class: "btn", text: "Cancel", onclick: closeModal }),
+      saveBtn,
+    ]),
+  ]);
+
+  openModal(form);
+  renderItems();
+  if (!isEdit) nameInput.focus();
 }
 
 export { NUTRIENT_FIELDS };

@@ -136,9 +136,10 @@ code does **not** change what the URL serves.
 
 (The frontend has no such issue — GitHub Pages redeploys automatically on push.)
 
-> **When new features add a Sheet column** (e.g. `serving_g` for default serving sizes):
-> after redeploying, also **run `setupSheet()` again** from the editor. It's idempotent and
-> now adds any missing columns to your existing tabs — no data is touched.
+> **When new features add a Sheet column or tab** (e.g. `serving_g`/`servings` columns, or the
+> `Recipes` tab for dishes): after redeploying, also **run `setupSheet()` again** from the
+> editor. It's idempotent and now adds any missing tabs and columns to your spreadsheet — no
+> data is touched.
 
 ---
 
@@ -169,6 +170,11 @@ No Python or OAuth needed because the editor already runs as you.
   item quantities, add/remove items, or delete it (`updateMeal` / `deleteMeal`).
 - **Default serving sizes.** Give a food an optional `serving_g`; when set, the quantity prompt
   offers ½/1/2/3-serving chips that fill in the grams. Storage stays in grams.
+- **Dishes (recipes).** In the **Dishes** tab, compose a dish from ingredient foods + grams
+  (+ optional servings). A dish is stored as a food with a recipe (in the `Recipes` tab); its
+  per-100g and per-serving nutrition are **computed on the client** from the ingredients, so
+  it stays correct when an ingredient's nutrition is edited. Dishes appear in the Log search
+  (🍲) and log exactly like a food.
 - **All nutrition math is client-side.** The API returns raw rows; the browser joins meal
   items with the cached food catalog and computes `per-100g × grams / 100`.
 - **Blank ≠ 0.** Unknown nutrition values are stored as empty cells and shown as "—";

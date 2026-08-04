@@ -126,7 +126,7 @@ export function createLogView(ctx) {
       const kcal = f.kcal_100g == null ? "—" : formatNum(f.kcal_100g) + " kcal/100g";
       resultsEl.appendChild(
         el("li", { onclick: () => addFoodToDraft(f) }, [
-          el("span", { text: f.name }),
+          el("span", { text: (f.is_dish ? "🍲 " : "") + f.name }),
           el("span", { class: "meta", text: kcal }),
         ])
       );

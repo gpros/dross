@@ -7,6 +7,7 @@ import { setReauthHandler } from "./api.js";
 import { el, toast } from "./ui.js";
 import { createLogView } from "./views/log.js";
 import { createFoodsView } from "./views/foods.js";
+import { createDishesView } from "./views/dishes.js";
 import { createHistoryView } from "./views/history.js";
 
 const signinScreen = document.getElementById("signin-screen");
@@ -55,6 +56,7 @@ async function startApp() {
     views = {
       log: createLogView(ctx),
       foods: createFoodsView(ctx),
+      dishes: createDishesView(ctx),
       history: createHistoryView(ctx),
     };
     wireTabs();

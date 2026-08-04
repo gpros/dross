@@ -4,6 +4,7 @@
 // here is persisted to disk; a page reload starts fresh (online-only by design).
 
 import * as api from "./api.js";
+import { computeDishNutrition } from "./nutrition.js";
 
 const state = {
   foods: [],          // [{id, name, kcal_100g, protein_100g, carbs_100g, fat_100g}]
@@ -12,6 +13,7 @@ const state = {
   meals: [],          // recent window of meals, newest-first (shared by Log + History)
   mealsHasMore: false,// true if older meals exist beyond the loaded window
   mealsNextBefore: null, // timestamp cursor for loading older meals
+  recipes: {},        // dishId -> [{food_id, name, quantity_g}] (a dish is a food + a recipe)
   draft: {            // in-progress meal on the Log view
     timestamp: null,  // ISO string; set when the Log view initializes
     note: "",
@@ -23,6 +25,8 @@ const BOOTSTRAP_LIMIT = 100; // recent meals preloaded on startup (covers today 
 
 export function getFoods() { return state.foods; }
 export function getFoodById(id) { return state.foodsById.get(String(id)) || null; }
+export function getDishes() { return state.foods.filter((f) => f.is_dish); }
+export function getRecipe(dishId) { return state.recipes[String(dishId)] || []; }
 export function getSettings() { return state.settings; }
 export function getDraft() { return state.draft; }
 export function getRecentMeals() { return state.meals; }
@@ -43,11 +47,51 @@ function indexFoods() {
   state.foods.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
 }
 
+const DISH_KEYS = ["kcal_100g", "protein_100g", "carbs_100g", "fat_100g"];
+
+// Overlay each dish's computed per-100g + serving size onto its catalog food object, so a
+// dish behaves like any food downstream (search, logging, totals). Recomputed whenever foods
+// or recipes change, so editing an ingredient's nutrition refreshes dependent dishes.
+export function recomputeDishes() {
+  Object.keys(state.recipes).forEach((dishId) => {
+    const dish = state.foodsById.get(String(dishId));
+    if (!dish) return;
+    const ings = state.recipes[dishId];
+    const per = computeDishNutrition(ings);
+    DISH_KEYS.forEach((k) => { dish[k] = per[k]; });
+    dish.is_dish = true;
+    dish.recipe = ings;
+    dish.total_g = per.total_g;
+    dish.serving_g = (dish.servings > 0 && per.total_g > 0) ? per.total_g / dish.servings : null;
+  });
+}
+
+// Build state.recipes from raw bootstrap rows [{dish_id, food_id, quantity_g}], resolving
+// ingredient names from the (already-loaded) catalog.
+function setRecipesFromRows(rows) {
+  const map = {};
+  (rows || []).forEach((r) => {
+    const list = map[String(r.dish_id)] || (map[String(r.dish_id)] = []);
+    const f = state.foodsById.get(String(r.food_id));
+    list.push({ food_id: String(r.food_id), name: f ? f.name : "(unknown)", quantity_g: r.quantity_g });
+  });
+  state.recipes = map;
+}
+
+// Set/replace one dish's recipe (after add/updateDish) and recompute.
+export function setRecipe(dishId, ingredients) {
+  state.recipes[String(dishId)] = (ingredients || []).map((i) => ({
+    food_id: String(i.food_id), name: i.name, quantity_g: i.quantity_g,
+  }));
+  recomputeDishes();
+}
+
 export async function loadFoods(force = false) {
   if (foodsLoaded && !force) return state.foods;
   const data = await api.getFoods();
   state.foods = data.foods || [];
   indexFoods();
+  recomputeDishes();
   foodsLoaded = true;
   return state.foods;
 }
@@ -73,9 +117,12 @@ export async function loadBootstrap() {
     setFoods(data.foods);
     state.settings = data.settings || {};
     setMeals(data.meals, data.hasMore, data.nextBefore);
+    setRecipesFromRows(data.recipes);
+    recomputeDishes();
   } catch (err) {
     if (err && err.code === "unknown_action") {
-      // Old backend: fetch the pieces separately (still works, just slower).
+      // Old backend: fetch the pieces separately (still works, just slower). No recipes
+      // endpoint on the old backend, so dishes simply don't appear until it's redeployed.
       const [foods, settings, meals] = await Promise.all([
         api.getFoods(),
         api.getSettings(),
@@ -84,6 +131,7 @@ export async function loadBootstrap() {
       setFoods(foods.foods);
       state.settings = settings.settings || {};
       setMeals(meals.meals, meals.hasMore, meals.nextBefore);
+      setRecipesFromRows([]);
     } else {
       throw err;
     }
@@ -130,6 +178,7 @@ export function upsertFood(food) {
   if (idx >= 0) state.foods[idx] = food;
   else state.foods.push(food);
   indexFoods();
+  recomputeDishes(); // an edited ingredient may change dishes that use it
   return food;
 }
 

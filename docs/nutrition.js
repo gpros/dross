@@ -77,4 +77,17 @@ export function anyIncomplete(totals) {
   return MACROS.some((m) => totals.incomplete[m]);
 }
 
-export { MACROS };
+// Compute a dish's per-100g nutrition from its ingredients [{food_id, quantity_g}].
+// per-100g = macro_total / total_weight * 100; a macro is null (unknown) if any ingredient
+// is missing it, so downstream "≥" handling applies. Returns { *_100g, total_g }.
+export function computeDishNutrition(ingredients) {
+  const totalG = (ingredients || []).reduce((s, i) => s + (Number(i.quantity_g) || 0), 0);
+  const t = itemsTotals(ingredients);
+  const out = { total_g: totalG };
+  MACROS.forEach((m) => {
+    out[PER100_KEY[m]] = (t.incomplete[m] || totalG <= 0) ? null : (t[m] / totalG) * 100;
+  });
+  return out;
+}
+
+export { MACROS, PER100_KEY };

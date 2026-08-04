@@ -20,9 +20,10 @@
 // ---- Sheet / schema constants -------------------------------------------------
 
 var SHEETS = {
-  Foods: ['id', 'name', 'kcal_100g', 'protein_100g', 'carbs_100g', 'fat_100g', 'serving_g', 'created_at'],
+  Foods: ['id', 'name', 'kcal_100g', 'protein_100g', 'carbs_100g', 'fat_100g', 'serving_g', 'servings', 'created_at'],
   Meals: ['id', 'timestamp', 'note'],
   MealItems: ['id', 'meal_id', 'food_id', 'quantity_g'],
+  Recipes: ['id', 'dish_id', 'food_id', 'quantity_g'],
   Settings: ['key', 'value']
 };
 
@@ -225,7 +226,8 @@ function foodOut(row) {
     protein_100g: cellToNum(row.protein_100g),
     carbs_100g: cellToNum(row.carbs_100g),
     fat_100g: cellToNum(row.fat_100g),
-    serving_g: cellToNum(row.serving_g)
+    serving_g: cellToNum(row.serving_g),
+    servings: cellToNum(row.servings)
   };
 }
 
@@ -289,6 +291,8 @@ var ACTIONS = {
   getFoods: getFoods,
   addFood: addFood,
   updateFood: updateFood,
+  addDish: addDish,
+  updateDish: updateDish,
   addMeal: addMeal,
   updateMeal: updateMeal,
   deleteMeal: deleteMeal,
@@ -309,8 +313,18 @@ function getBootstrap(payload) {
     settings: getSettings().settings,
     meals: mealsResult.meals,
     hasMore: mealsResult.hasMore,
-    nextBefore: mealsResult.nextBefore
+    nextBefore: mealsResult.nextBefore,
+    recipes: getRecipesSafe()
   };
+}
+
+/** All Recipes rows, or [] if the Recipes tab doesn't exist yet (setupSheet not re-run). */
+function getRecipesSafe() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss.getSheetByName('Recipes')) return [];
+  return readTable('Recipes').rows.map(function (r) {
+    return { dish_id: String(r.dish_id), food_id: String(r.food_id), quantity_g: cellToNum(r.quantity_g) };
+  });
 }
 
 function getFoods() {
@@ -362,6 +376,113 @@ function updateFood(payload) {
     // Re-read the row to return canonical values.
     var refreshed = readTable('Foods');
     return foodOut(findFoodById(refreshed.rows, id));
+  });
+}
+
+// ---- Dishes (a dish is a Foods row + a recipe in the Recipes tab) --------------
+
+/** Validate an optional positive `servings` value. Returns { present, value }. */
+function normServings(payload) {
+  if (!payload.hasOwnProperty('servings')) return { present: false, value: null };
+  var v = payload.servings;
+  if (v === null || v === '' || v === undefined) return { present: true, value: null };
+  var n = (typeof v === 'number') ? v : Number(String(v).replace(',', '.').trim());
+  if (isNaN(n) || n <= 0) clientFail('bad_servings');
+  return { present: true, value: n };
+}
+
+/** Row numbers (1-based) of Recipes belonging to a dish, plus the sheet. */
+function recipeRows(dishId) {
+  var table = readTable('Recipes');
+  var rows = [];
+  table.rows.forEach(function (r) { if (String(r.dish_id) === String(dishId)) rows.push(r.__row); });
+  return { sheet: table.sheet, rows: rows };
+}
+
+/** Write Recipes rows for a dish from resolved ingredients. */
+function writeRecipe(dishId, resolved) {
+  var out = [];
+  for (var i = 0; i < resolved.length; i++) {
+    appendRow('Recipes', {
+      id: Utilities.getUuid(), dish_id: dishId,
+      food_id: resolved[i].food_id, quantity_g: resolved[i].quantity_g
+    });
+    out.push({ food_id: resolved[i].food_id, name: resolved[i].name, quantity_g: resolved[i].quantity_g });
+  }
+  return out;
+}
+
+function addDish(payload) {
+  return withLock(function () {
+    var name = trimStr(payload.name);
+    if (!name) clientFail('bad_name');
+    if (!payload.ingredients || !payload.ingredients.length) clientFail('empty_dish');
+
+    var foodTable = readTable('Foods');
+    if (findFoodByName(foodTable.rows, name)) clientFail('name_taken');
+
+    var servings = normServings(payload);
+
+    // The dish itself is a food with blank nutrition (per-100g is computed client-side).
+    var dishId = Utilities.getUuid();
+    appendRow('Foods', {
+      id: dishId, name: name,
+      kcal_100g: '', protein_100g: '', carbs_100g: '', fat_100g: '', serving_g: '',
+      servings: servings.present && servings.value !== null ? servings.value : '',
+      created_at: new Date().toISOString()
+    });
+    foodTable.rows.push({ id: dishId, name: name }); // so an ingredient can't dedupe to the dish
+
+    var resolved = resolveMealItems(payload.ingredients, foodTable);
+    var outItems = writeRecipe(dishId, resolved);
+    return { id: dishId, name: name, servings: servings.value, ingredients: outItems };
+  });
+}
+
+function updateDish(payload) {
+  return withLock(function () {
+    var id = trimStr(payload.id);
+    if (!id) clientFail('bad_request');
+
+    var foodTable = readTable('Foods');
+    var target = findFoodById(foodTable.rows, id);
+    if (!target) clientFail('not_found');
+    var sheet = foodTable.sheet;
+
+    if (payload.hasOwnProperty('name')) {
+      var newName = trimStr(payload.name);
+      if (!newName) clientFail('bad_name');
+      var collision = findFoodByName(foodTable.rows, newName);
+      if (collision && String(collision.id) !== id) clientFail('name_taken');
+      sheet.getRange(target.__row, colIndex(foodTable.headers, 'name') + 1).setValue(newName);
+    }
+    var servings = normServings(payload);
+    if (servings.present) {
+      sheet.getRange(target.__row, colIndex(foodTable.headers, 'servings') + 1)
+        .setValue(servings.value === null ? '' : servings.value);
+    }
+
+    var outItems = null;
+    if (payload.hasOwnProperty('ingredients')) {
+      if (!payload.ingredients || !payload.ingredients.length) clientFail('empty_dish');
+      var resolved = resolveMealItems(payload.ingredients, readTable('Foods'));
+      var old = recipeRows(id);
+      deleteRows(old.sheet, old.rows);
+      outItems = writeRecipe(id, resolved);
+    }
+
+    var refreshed = findFoodById(readTable('Foods').rows, id);
+    if (outItems === null) {
+      var foodNameById = {};
+      readTable('Foods').rows.forEach(function (f) { foodNameById[String(f.id)] = String(f.name); });
+      outItems = recipeRows(id).rows.length
+        ? readTable('Recipes').rows.filter(function (r) { return String(r.dish_id) === id; })
+            .map(function (r) {
+              return { food_id: String(r.food_id), name: foodNameById[String(r.food_id)] || '(unknown)', quantity_g: cellToNum(r.quantity_g) };
+            })
+        : [];
+    }
+    return { id: id, name: String(refreshed.name), servings: cellToNum(refreshed.servings), ingredients: outItems };
   });
 }
 
