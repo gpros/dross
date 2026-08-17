@@ -5,7 +5,7 @@ built to run for free with no servers to maintain.
 
 - **Log meals** from a searchable **Foods** catalog; per-meal nutrition is computed on the client.
 - **Daily targets** — four nutrition targets score every day; changing them re-scores past and future live.
-- **Foods catalog** — add/edit foods with per-100g nutrition and optional default serving sizes (½/1/2/3 chips).
+- **Foods catalog** — add/edit foods with per-100g nutrition and optional default serving sizes (½/1/2/3 chips). Each food carries **English / Spanish / free-form** names, and search matches any of them.
 - **Dishes (recipes)** — compose a dish from ingredient foods; its nutrition is derived from the ingredients, so it stays correct when they change.
 - **History** — meals grouped by day with day totals; tap any meal to edit or delete it.
 - **Installable PWA**, system light/dark, and honest handling of incomplete data (blank ≠ 0; totals with unknowns shown as "≥" lower bounds).
@@ -27,7 +27,7 @@ protected by a single **shared password** you choose — no Google Sign-In, no O
 [ Google Apps Script Web App ]  ← checks the password, then reads/writes the Sheet
         │  SpreadsheetApp
         ▼
-[ Google Sheet: Foods · Meals · MealItems · Settings ]
+[ Google Sheet: Foods · Meals · MealItems · Recipes · Settings ]
 ```
 
 > **Note on auth.** This uses a shared password for a fast, personal-MVP setup. It's not as
@@ -53,10 +53,12 @@ docs/                 ← GitHub Pages serves this folder
   meals.js            day grouping, whole-day meal fetching, quick-pick frequency
   views/log.js        Log view (summary, search, chips, draft, save)
   views/foods.js      Foods catalog (list, filter, edit, add)
+  views/dishes.js     Dishes tab (create/edit recipes composed from foods)
   views/history.js    History (grouped by day, day totals, pagination)
   manifest.webmanifest + icon.svg   PWA "Add to Home Screen"
 apps-script/Code.gs   the entire backend
-tools/import_foods_notes.md   optional bulk food import
+apps-script/seed_foods.gs   optional ~200-food Mediterranean starter list (seedFoods())
+tools/import_foods_notes.md   optional bulk food import + starter-list instructions
 ```
 
 ---
@@ -80,8 +82,8 @@ You'll do this once. Budget ~10 minutes. Two moving parts: the **Sheet + Apps Sc
    - ⚠️ **The first Run usually only completes the authorization and does NOT run the
      function.** After granting permission, click **▶ Run** again to actually execute it.
      Check **View ▸ Executions** — you want a `setupSheet` run marked *Completed*.
-   - Go back to the Sheet tab and **reload the page**: you now have four tabs — **Foods**,
-     **Meals**, **MealItems**, **Settings** — each with a header row. (Re-running
+   - Go back to the Sheet tab and **reload the page**: you now have five tabs — **Foods**,
+     **Meals**, **MealItems**, **Recipes**, **Settings** — each with a header row. (Re-running
      `setupSheet` is safe.)
 
 ### 2. Set your password and deploy the Web App
@@ -160,6 +162,18 @@ names into a temporary **Import** tab (column A) and run the `importFoods()` fun
 the Apps Script editor — it appends new names with blank nutrition, skipping duplicates.
 No Python or OAuth needed because the editor already runs as you.
 
+### Starter food list (Mediterranean)
+
+Prefer a ready-made catalog? Run **`seedFoods()`** from
+[`apps-script/seed_foods.gs`](apps-script/seed_foods.gs) to add ~200 common Mediterranean foods,
+each with an **English and Spanish name**, macros, and a serving size where a standard portion
+exists. It's idempotent (skips foods you already have) and you can delete the file afterwards. See
+[`tools/import_foods_notes.md`](tools/import_foods_notes.md) for the run steps.
+
+> **Values are per 100 g, raw / as-purchased** — what a package label shows. Weigh food *raw* and
+> multiply; cooking afterwards doesn't change the totals. Pasta/rice/legumes use the **dry** values;
+> meat/fish are raw. Adjust any value in the Foods editor to match your own labels.
+
 ---
 
 ## How it works (design notes)
@@ -200,6 +214,10 @@ No Python or OAuth needed because the editor already runs as you.
   and future, against the new values. There is no per-date target history by design.
 - **Writes are serialized** with `LockService`, and numbers are written as real numbers
   (never locale-formatted strings) so a comma-decimal locale can't corrupt values.
+- **Frontend version label (debug).** `APP_VERSION` in [`docs/app.js`](docs/app.js) renders as
+  "version N" in the account footer. It's purely cosmetic — a quick way to confirm which frontend
+  build a device is actually running (see the caching note in Troubleshooting). Bump the number on
+  each frontend commit.
 
 ## Troubleshooting
 
@@ -209,6 +227,7 @@ No Python or OAuth needed because the editor already runs as you.
 | Nothing loads / network error in the app | `API_URL` in `config.js` is wrong or points at an old deployment. Re-copy the `/exec` URL. |
 | `{"ok":false,"error":"sheet_missing"}` | Run `setupSheet()` in the Apps Script editor (remember: run it twice — the first run only authorizes). |
 | Edits to `Code.gs` have no effect | You created a *new* deployment instead of a *new version* of the existing one (see above). |
+| Frontend changes don't appear after deploying | GitHub Pages caches assets ~10 min (`Cache-Control: max-age=600`). Hard-refresh (**Cmd/Ctrl+Shift+R**), open a private window, or wait ~10 min; confirm the build via the **"version N"** label in the footer. If installed as a PWA, fully close and reopen it. |
 | Wrong password is rejected | Type a wrong password on purpose — the app should refuse it and re-prompt. That's the expected pass. |
 
 ## Extending it later
