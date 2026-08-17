@@ -178,6 +178,12 @@ No Python or OAuth needed because the editor already runs as you.
   pieces separately — so it keeps working even before you redeploy.
 - **Edit or delete a logged meal.** Tap any meal in **History** to change its time, note, or
   item quantities, add/remove items, or delete it (`updateMeal` / `deleteMeal`).
+- **Three names per food/dish.** Each food (and dish) can carry an English name (`name`, the
+  primary), a Spanish name (`name_es`), and a free-form label (`name_free`); at least one is
+  required. Search matches **any** of the three (accent/case-insensitive) and a result row shows
+  the name that matched; elsewhere the first non-empty name (English → Spanish → free-form) is
+  shown. Uniqueness (`name_taken`) is enforced on the English name only. Adds the `name_es` /
+  `name_free` columns — re-run `setupSheet()` after redeploying (see below).
 - **Default serving sizes.** Give a food an optional `serving_g`; when set, the quantity prompt
   offers ½/1/2/3-serving chips that fill in the grams. Storage stays in grams.
 - **Dishes (recipes).** In the **Dishes** tab, compose a dish from ingredient foods + grams

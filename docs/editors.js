@@ -3,7 +3,10 @@
 
 import * as api from "./api.js";
 import * as state from "./state.js";
-import { el, clear, openModal, closeModal, parseDecimal, toast, normalizeText, formatNum } from "./ui.js";
+import {
+  el, clear, openModal, closeModal, parseDecimal, toast, normalizeText, formatNum,
+  displayName, matchingName, foodMatchesQuery, foodMatchesExact,
+} from "./ui.js";
 import { itemsTotals } from "./nutrition.js";
 
 const NUTRIENT_FIELDS = [
@@ -34,6 +37,35 @@ function fieldRow(labelText, unit, input) {
     el("span", { text: unit ? `${labelText} (${unit})` : labelText }),
     input,
   ]);
+}
+
+// The three name fields shared by the food and dish editors (English / Spanish / free-form).
+const NAME_FIELDS = [
+  { key: "name", label: "Name (English)" },
+  { key: "name_es", label: "Name (Spanish)" },
+  { key: "name_free", label: "Name (free-form)" },
+];
+
+// Build the three name inputs (prefilled from `food`/`dish` when editing) plus rows to drop
+// into a form. `collect()` validates (at least one non-empty) and returns a
+// { name, name_es, name_free } patch, or null after showing a toast.
+function nameFields(item) {
+  const inputs = {};
+  const rows = NAME_FIELDS.map((f) => {
+    const inp = el("input", { type: "text", value: item ? (item[f.key] || "") : "", autocomplete: "off" });
+    inputs[f.key] = inp;
+    return el("label", { class: "field" }, [el("span", { text: f.label }), inp]);
+  });
+  function collect() {
+    const patch = {};
+    NAME_FIELDS.forEach((f) => { patch[f.key] = inputs[f.key].value.trim(); });
+    if (!patch.name && !patch.name_es && !patch.name_free) {
+      toast("Enter at least one name.", { error: true });
+      return null;
+    }
+    return patch;
+  }
+  return { inputs, rows, collect };
 }
 
 // ---- Daily targets editor ----
@@ -89,7 +121,7 @@ export function openTargetsEditor({ onSaved } = {}) {
 // food object    -> edit mode (prefilled; distinguishes clear vs 0)
 export function openFoodEditor(food, { onSaved } = {}) {
   const isEdit = !!food;
-  const nameInput = el("input", { type: "text", value: food ? food.name : "", autocomplete: "off" });
+  const names = nameFields(food);
   const inputs = {};
   const rows = NUTRIENT_FIELDS.map((f) => {
     const inp = decimalInput(food ? food[f.key] : "");
@@ -101,8 +133,8 @@ export function openFoodEditor(food, { onSaved } = {}) {
   const saveBtn = el("button", { class: "btn primary", text: "Save" });
   const form = el("div", {}, [
     el("h2", { text: isEdit ? "Edit food" : "Add food" }),
-    el("label", { class: "field" }, [el("span", { text: "Name" }), nameInput]),
-    el("p", { class: "muted small", text: "Leave a nutrition field blank for “unknown” (different from 0)." }),
+    ...names.rows,
+    el("p", { class: "muted small", text: "Fill in at least one name. Leave a nutrition field blank for “unknown” (different from 0)." }),
     ...rows,
     fieldRow("Default serving", "g, optional", servingInput),
     el("div", { class: "actions" }, [
@@ -112,10 +144,10 @@ export function openFoodEditor(food, { onSaved } = {}) {
   ]);
 
   saveBtn.addEventListener("click", async () => {
-    const name = nameInput.value.trim();
-    if (!name) { toast("Enter a food name.", { error: true }); return; }
+    const namePatch = names.collect();
+    if (!namePatch) return;
 
-    const patch = { name };
+    const patch = { ...namePatch };
     for (const f of NUTRIENT_FIELDS) {
       const v = parseDecimal(inputs[f.key].value);
       if (Number.isNaN(v)) { toast("Nutrition values must be numbers.", { error: true }); return; }
@@ -148,7 +180,7 @@ export function openFoodEditor(food, { onSaved } = {}) {
   });
 
   openModal(form);
-  nameInput.focus();
+  names.inputs.name.focus();
 }
 
 // ---- Quantity prompt (adding a food to a meal) ----
@@ -158,7 +190,7 @@ const SERVING_MULTIPLIERS = [0.5, 1, 2, 3];
 // `food` may be a food object { name, serving_g? } or a bare name string.
 // Returns a Promise resolving to a positive number (grams), or null if cancelled.
 export function promptQuantity(food, defaultQty = "") {
-  const name = typeof food === "string" ? food : (food && food.name) || "";
+  const name = typeof food === "string" ? food : (food ? displayName(food) : "");
   const servingG = food && typeof food === "object" ? food.serving_g : null;
 
   return new Promise((resolve) => {
@@ -264,7 +296,7 @@ export function openMealEditor(meal, { onSaved, onDeleted } = {}) {
   }
 
   function addFromCatalog(food) {
-    items.push({ food_id: food.id, name: food.name, quantity_g: food.serving_g || 100 });
+    items.push({ food_id: food.id, name: displayName(food), quantity_g: food.serving_g || 100 });
     searchInput.value = ""; renderResults(""); renderItems();
   }
   function addNew(name) {
@@ -277,14 +309,14 @@ export function openMealEditor(meal, { onSaved, onDeleted } = {}) {
     const q = normalizeText(query);
     if (!q) return;
     const foods = state.getFoods();
-    const exact = foods.some((f) => normalizeText(f.name) === q);
+    const exact = foods.some((f) => foodMatchesExact(f, q));
     if (!exact) {
       resultsEl.appendChild(el("li", { class: "add-new", onclick: () => addNew(query) }, [
         el("span", { text: `Add “${query.trim()}” as new food` }), el("span", { class: "meta", text: "new" }),
       ]));
     }
-    foods.filter((f) => normalizeText(f.name).includes(q)).slice(0, 8).forEach((f) => {
-      resultsEl.appendChild(el("li", { onclick: () => addFromCatalog(f) }, [el("span", { text: f.name })]));
+    foods.filter((f) => foodMatchesQuery(f, q)).slice(0, 8).forEach((f) => {
+      resultsEl.appendChild(el("li", { onclick: () => addFromCatalog(f) }, [el("span", { text: matchingName(f, q) })]));
     });
   }
   searchInput.addEventListener("input", () => renderResults(searchInput.value));
@@ -358,7 +390,7 @@ export function openDishEditor(dish, { onSaved } = {}) {
     food_id: i.food_id, food_name: undefined, name: i.name, quantity_g: i.quantity_g,
   }));
 
-  const nameInput = el("input", { type: "text", value: dish ? dish.name : "", autocomplete: "off" });
+  const names = nameFields(dish);
   const servingsInput = el("input", {
     type: "text", inputmode: "decimal", autocomplete: "off",
     value: dish && dish.servings != null ? String(dish.servings) : "", placeholder: "e.g. 8",
@@ -412,7 +444,7 @@ export function openDishEditor(dish, { onSaved } = {}) {
   }
 
   function addFromCatalog(food) {
-    ingredients.push({ food_id: food.id, name: food.name, quantity_g: food.serving_g || 100 });
+    ingredients.push({ food_id: food.id, name: displayName(food), quantity_g: food.serving_g || 100 });
     searchInput.value = ""; renderResults(""); renderItems();
   }
   function addNew(name) {
@@ -424,14 +456,14 @@ export function openDishEditor(dish, { onSaved } = {}) {
     const q = normalizeText(query);
     if (!q) return;
     const foods = state.getFoods().filter((f) => !f.is_dish); // ingredients are basic foods only
-    const exact = foods.some((f) => normalizeText(f.name) === q);
+    const exact = foods.some((f) => foodMatchesExact(f, q));
     if (!exact) {
       resultsEl.appendChild(el("li", { class: "add-new", onclick: () => addNew(query) }, [
         el("span", { text: `Add “${query.trim()}” as new food` }), el("span", { class: "meta", text: "new" }),
       ]));
     }
-    foods.filter((f) => normalizeText(f.name).includes(q)).slice(0, 8).forEach((f) => {
-      resultsEl.appendChild(el("li", { onclick: () => addFromCatalog(f) }, [el("span", { text: f.name })]));
+    foods.filter((f) => foodMatchesQuery(f, q)).slice(0, 8).forEach((f) => {
+      resultsEl.appendChild(el("li", { onclick: () => addFromCatalog(f) }, [el("span", { text: matchingName(f, q) })]));
     });
   }
   searchInput.addEventListener("input", () => renderResults(searchInput.value));
@@ -439,8 +471,8 @@ export function openDishEditor(dish, { onSaved } = {}) {
 
   const saveBtn = el("button", { class: "btn primary", text: "Save" });
   saveBtn.addEventListener("click", async () => {
-    const name = nameInput.value.trim();
-    if (!name) { toast("Enter a dish name.", { error: true }); return; }
+    const namePatch = names.collect();
+    if (!namePatch) return;
     if (!ingredients.length) { toast("Add at least one ingredient.", { error: true }); return; }
     const servings = parseDecimal(servingsInput.value);
     if (Number.isNaN(servings) || (servings != null && servings <= 0)) { toast("Servings must be a positive number.", { error: true }); return; }
@@ -451,8 +483,8 @@ export function openDishEditor(dish, { onSaved } = {}) {
     saveBtn.disabled = true; saveBtn.textContent = "Saving…";
     try {
       const saved = isEdit
-        ? await api.updateDish({ id: dish.id, name, servings, ingredients: payloadIngredients })
-        : await api.addDish({ name, servings, ingredients: payloadIngredients });
+        ? await api.updateDish({ id: dish.id, ...namePatch, servings, ingredients: payloadIngredients })
+        : await api.addDish({ ...namePatch, servings, ingredients: payloadIngredients });
       await state.loadFoods(true);          // pick up the dish food + any new ingredient foods
       state.setRecipe(saved.id, saved.ingredients); // set recipe + recompute the dish
       closeModal();
@@ -466,7 +498,7 @@ export function openDishEditor(dish, { onSaved } = {}) {
 
   const form = el("div", {}, [
     el("h2", { text: isEdit ? "Edit dish" : "New dish" }),
-    el("label", { class: "field" }, [el("span", { text: "Name" }), nameInput]),
+    ...names.rows,
     el("label", { class: "field" }, [el("span", { text: "Servings (optional)" }), servingsInput]),
     el("div", { class: "section-title", text: "Ingredients" }),
     itemsEl,
@@ -481,7 +513,7 @@ export function openDishEditor(dish, { onSaved } = {}) {
 
   openModal(form);
   renderItems();
-  if (!isEdit) nameInput.focus();
+  if (!isEdit) names.inputs.name.focus();
 }
 
 export { NUTRIENT_FIELDS };

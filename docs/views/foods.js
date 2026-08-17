@@ -2,7 +2,7 @@
 // add, and inline edit.
 
 import * as state from "../state.js";
-import { el, clear, normalizeText, formatNum } from "../ui.js";
+import { el, clear, normalizeText, formatNum, matchingName, foodMatchesQuery } from "../ui.js";
 import { openFoodEditor } from "../editors.js";
 
 const NUTRIENTS = ["kcal_100g", "protein_100g", "carbs_100g", "fat_100g"];
@@ -27,7 +27,7 @@ export function createFoodsView(ctx) {
     clear(listEl);
     const q = normalizeText(query);
     let foods = state.getFoods().filter((f) => !f.is_dish); // dishes live in the Dishes tab
-    if (q) foods = foods.filter((f) => normalizeText(f.name).includes(q));
+    if (q) foods = foods.filter((f) => foodMatchesQuery(f, q));
     if (incompleteOnly) foods = foods.filter(foodIsIncomplete);
 
     if (!foods.length) {
@@ -42,7 +42,7 @@ export function createFoodsView(ctx) {
         onclick: () => openFoodEditor(food, { onSaved: () => renderList(listEl) }),
       }, [
         incomplete ? el("span", { class: "incomplete-dot", title: "Missing nutrition data" }) : el("span", { style: "width:8px" }),
-        el("span", { class: "fname", text: food.name }),
+        el("span", { class: "fname", text: matchingName(food, q) }),
         el("span", { class: "fmacros", text: macrosLine(food) }),
       ]);
       listEl.appendChild(row);

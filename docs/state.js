@@ -5,9 +5,10 @@
 
 import * as api from "./api.js";
 import { computeDishNutrition } from "./nutrition.js";
+import { displayName } from "./ui.js";
 
 const state = {
-  foods: [],          // [{id, name, kcal_100g, protein_100g, carbs_100g, fat_100g}]
+  foods: [],          // [{id, name, name_es, name_free, kcal_100g, protein_100g, carbs_100g, fat_100g}]
   foodsById: new Map(),
   settings: null,     // { target_kcal, target_protein_g, ... } (values may be null)
   meals: [],          // recent window of meals, newest-first (shared by Log + History)
@@ -44,7 +45,7 @@ let foodsLoaded = false;
 
 function indexFoods() {
   state.foodsById = new Map(state.foods.map((f) => [String(f.id), f]));
-  state.foods.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+  state.foods.sort((a, b) => displayName(a).localeCompare(displayName(b), undefined, { sensitivity: "base" }));
 }
 
 const DISH_KEYS = ["kcal_100g", "protein_100g", "carbs_100g", "fat_100g"];
@@ -73,7 +74,7 @@ function setRecipesFromRows(rows) {
   (rows || []).forEach((r) => {
     const list = map[String(r.dish_id)] || (map[String(r.dish_id)] = []);
     const f = state.foodsById.get(String(r.food_id));
-    list.push({ food_id: String(r.food_id), name: f ? f.name : "(unknown)", quantity_g: r.quantity_g });
+    list.push({ food_id: String(r.food_id), name: f ? displayName(f) : "(unknown)", quantity_g: r.quantity_g });
   });
   state.recipes = map;
 }

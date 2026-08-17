@@ -3,7 +3,7 @@
 // in the Log food search like any food.
 
 import * as state from "../state.js";
-import { el, clear, formatNum } from "../ui.js";
+import { el, clear, formatNum, displayName } from "../ui.js";
 import { itemsTotals } from "../nutrition.js";
 import { openDishEditor } from "../editors.js";
 
@@ -43,7 +43,7 @@ export function createDishesView(ctx) {
       list.appendChild(el("button", {
         class: "food-row", onclick: () => openDishEditor(dish, { onSaved: renderList }),
       }, [
-        el("span", { class: "fname", text: "🍲 " + dish.name }),
+        el("span", { class: "fname", text: "🍲 " + displayName(dish) }),
         el("span", { class: "fmacros", text: summaryLine(dish) }),
       ]));
     });

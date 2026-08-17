@@ -20,7 +20,7 @@
 // ---- Sheet / schema constants -------------------------------------------------
 
 var SHEETS = {
-  Foods: ['id', 'name', 'kcal_100g', 'protein_100g', 'carbs_100g', 'fat_100g', 'serving_g', 'servings', 'created_at'],
+  Foods: ['id', 'name', 'name_es', 'name_free', 'kcal_100g', 'protein_100g', 'carbs_100g', 'fat_100g', 'serving_g', 'servings', 'created_at'],
   Meals: ['id', 'timestamp', 'note'],
   MealItems: ['id', 'meal_id', 'food_id', 'quantity_g'],
   Recipes: ['id', 'dish_id', 'food_id', 'quantity_g'],
@@ -222,6 +222,8 @@ function foodOut(row) {
   return {
     id: row.id,
     name: row.name,
+    name_es: trimStr(row.name_es),
+    name_free: trimStr(row.name_free),
     kcal_100g: cellToNum(row.kcal_100g),
     protein_100g: cellToNum(row.protein_100g),
     carbs_100g: cellToNum(row.carbs_100g),
@@ -231,10 +233,56 @@ function foodOut(row) {
   };
 }
 
+// A food/dish has three names: English (`name`, the primary), Spanish (`name_es`), and a
+// free-form label (`name_free`). At least one must be non-empty. English stays the canonical
+// name used for uniqueness and dedupe; the others are for finding/identifying the same food.
+
+/** The three trimmed name fields of a row, in EN -> ES -> free order. */
+function namesOf(row) {
+  return [trimStr(row.name), trimStr(row.name_es), trimStr(row.name_free)];
+}
+
+/** The name to surface for a row: first non-empty (EN -> ES -> free), else '(unknown)'. */
+function displayName(row) {
+  var names = namesOf(row);
+  for (var i = 0; i < names.length; i++) { if (names[i]) return names[i]; }
+  return '(unknown)';
+}
+
+/**
+ * Read the three name fields from a payload, each with present/value semantics like the
+ * nutrient helpers (present:false => omitted; present:true => trimmed string, '' clears).
+ */
+function readNames(payload) {
+  var keys = ['name', 'name_es', 'name_free'];
+  var out = {};
+  keys.forEach(function (k) {
+    out[k] = payload.hasOwnProperty(k)
+      ? { present: true, value: trimStr(payload[k]) }
+      : { present: false, value: '' };
+  });
+  return out;
+}
+
+/** English-name exact match (case-insensitive). Used for uniqueness + createFood idempotency. */
 function findFoodByName(rows, name) {
   var lower = String(name).trim().toLowerCase();
+  if (!lower) return null;
   for (var i = 0; i < rows.length; i++) {
     if (String(rows[i].name).trim().toLowerCase() === lower) return rows[i];
+  }
+  return null;
+}
+
+/** Match `value` against ANY of a row's three names. Used to resolve free-typed ingredients. */
+function findFoodByAnyName(rows, value) {
+  var lower = String(value).trim().toLowerCase();
+  if (!lower) return null;
+  for (var i = 0; i < rows.length; i++) {
+    var names = namesOf(rows[i]);
+    for (var j = 0; j < names.length; j++) {
+      if (names[j].toLowerCase() === lower) return rows[i];
+    }
   }
   return null;
 }
@@ -248,12 +296,16 @@ function findFoodById(rows, id) {
 
 /** Create a food (blank nutrition allowed) if the name is new; return its output row. */
 function createFood(payload) {
-  var name = trimStr(payload.name);
-  if (!name) clientFail('bad_name');
+  var names = readNames(payload);
+  var name = names.name.value, nameEs = names.name_es.value, nameFree = names.name_free.value;
+  if (!name && !nameEs && !nameFree) clientFail('bad_name'); // at least one name required
 
   var table = readTable('Foods');
-  var existing = findFoodByName(table.rows, name);
-  if (existing) return foodOut(existing); // idempotent
+  // Idempotency: an English name that already exists returns the existing food unchanged.
+  if (name) {
+    var existing = findFoodByName(table.rows, name);
+    if (existing) return foodOut(existing);
+  }
 
   var kcal = normNutrient(payload, 'kcal_100g');
   var protein = normNutrient(payload, 'protein_100g');
@@ -265,6 +317,8 @@ function createFood(payload) {
   appendRow('Foods', {
     id: id,
     name: name,
+    name_es: nameEs,
+    name_free: nameFree,
     kcal_100g: kcal.present && kcal.value !== null ? kcal.value : '',
     protein_100g: protein.present && protein.value !== null ? protein.value : '',
     carbs_100g: carbs.present && carbs.value !== null ? carbs.value : '',
@@ -276,6 +330,8 @@ function createFood(payload) {
   return {
     id: id,
     name: name,
+    name_es: nameEs,
+    name_free: nameFree,
     kcal_100g: kcal.present ? kcal.value : null,
     protein_100g: protein.present ? protein.value : null,
     carbs_100g: carbs.present ? carbs.value : null,
@@ -349,13 +405,22 @@ function updateFood(payload) {
 
     var updates = {}; // header -> value to write
 
-    if (payload.hasOwnProperty('name')) {
-      var newName = trimStr(payload.name);
-      if (!newName) clientFail('bad_name');
-      var collision = findFoodByName(table.rows, newName);
-      if (collision && String(collision.id) !== id) clientFail('name_taken');
-      updates.name = newName;
+    // Names: each of the three is independently settable/clearable. At least one must remain
+    // non-empty; English (`name`) alone must stay unique.
+    var names = readNames(payload);
+    var effName = names.name.present ? names.name.value : trimStr(target.name);
+    var effEs = names.name_es.present ? names.name_es.value : trimStr(target.name_es);
+    var effFree = names.name_free.present ? names.name_free.value : trimStr(target.name_free);
+    if (!effName && !effEs && !effFree) clientFail('bad_name');
+    if (names.name.present) {
+      if (effName) {
+        var collision = findFoodByName(table.rows, effName);
+        if (collision && String(collision.id) !== id) clientFail('name_taken');
+      }
+      updates.name = effName;
     }
+    if (names.name_es.present) updates.name_es = effEs;
+    if (names.name_free.present) updates.name_free = effFree;
 
     NUTRIENT_KEYS.forEach(function (field) {
       var n = normNutrient(payload, field);
@@ -414,28 +479,33 @@ function writeRecipe(dishId, resolved) {
 
 function addDish(payload) {
   return withLock(function () {
-    var name = trimStr(payload.name);
-    if (!name) clientFail('bad_name');
+    var names = readNames(payload);
+    var name = names.name.value, nameEs = names.name_es.value, nameFree = names.name_free.value;
+    if (!name && !nameEs && !nameFree) clientFail('bad_name'); // at least one name required
     if (!payload.ingredients || !payload.ingredients.length) clientFail('empty_dish');
 
     var foodTable = readTable('Foods');
-    if (findFoodByName(foodTable.rows, name)) clientFail('name_taken');
+    if (name && findFoodByName(foodTable.rows, name)) clientFail('name_taken');
 
     var servings = normServings(payload);
 
     // The dish itself is a food with blank nutrition (per-100g is computed client-side).
     var dishId = Utilities.getUuid();
     appendRow('Foods', {
-      id: dishId, name: name,
+      id: dishId, name: name, name_es: nameEs, name_free: nameFree,
       kcal_100g: '', protein_100g: '', carbs_100g: '', fat_100g: '', serving_g: '',
       servings: servings.present && servings.value !== null ? servings.value : '',
       created_at: new Date().toISOString()
     });
-    foodTable.rows.push({ id: dishId, name: name }); // so an ingredient can't dedupe to the dish
+    // so an ingredient can't dedupe to the dish (matched by any of its names)
+    foodTable.rows.push({ id: dishId, name: name, name_es: nameEs, name_free: nameFree });
 
     var resolved = resolveMealItems(payload.ingredients, foodTable);
     var outItems = writeRecipe(dishId, resolved);
-    return { id: dishId, name: name, servings: servings.value, ingredients: outItems };
+    return {
+      id: dishId, name: name, name_es: nameEs, name_free: nameFree,
+      servings: servings.value, ingredients: outItems
+    };
   });
 }
 
@@ -449,12 +519,24 @@ function updateDish(payload) {
     if (!target) clientFail('not_found');
     var sheet = foodTable.sheet;
 
-    if (payload.hasOwnProperty('name')) {
-      var newName = trimStr(payload.name);
-      if (!newName) clientFail('bad_name');
-      var collision = findFoodByName(foodTable.rows, newName);
-      if (collision && String(collision.id) !== id) clientFail('name_taken');
-      sheet.getRange(target.__row, colIndex(foodTable.headers, 'name') + 1).setValue(newName);
+    // Names (three fields): at least one non-empty; English alone stays unique.
+    var names = readNames(payload);
+    var effName = names.name.present ? names.name.value : trimStr(target.name);
+    var effEs = names.name_es.present ? names.name_es.value : trimStr(target.name_es);
+    var effFree = names.name_free.present ? names.name_free.value : trimStr(target.name_free);
+    if (!effName && !effEs && !effFree) clientFail('bad_name');
+    if (names.name.present) {
+      if (effName) {
+        var collision = findFoodByName(foodTable.rows, effName);
+        if (collision && String(collision.id) !== id) clientFail('name_taken');
+      }
+      sheet.getRange(target.__row, colIndex(foodTable.headers, 'name') + 1).setValue(effName);
+    }
+    if (names.name_es.present) {
+      sheet.getRange(target.__row, colIndex(foodTable.headers, 'name_es') + 1).setValue(effEs);
+    }
+    if (names.name_free.present) {
+      sheet.getRange(target.__row, colIndex(foodTable.headers, 'name_free') + 1).setValue(effFree);
     }
     var servings = normServings(payload);
     if (servings.present) {
@@ -474,7 +556,7 @@ function updateDish(payload) {
     var refreshed = findFoodById(readTable('Foods').rows, id);
     if (outItems === null) {
       var foodNameById = {};
-      readTable('Foods').rows.forEach(function (f) { foodNameById[String(f.id)] = String(f.name); });
+      readTable('Foods').rows.forEach(function (f) { foodNameById[String(f.id)] = displayName(f); });
       outItems = recipeRows(id).rows.length
         ? readTable('Recipes').rows.filter(function (r) { return String(r.dish_id) === id; })
             .map(function (r) {
@@ -482,7 +564,11 @@ function updateDish(payload) {
             })
         : [];
     }
-    return { id: id, name: String(refreshed.name), servings: cellToNum(refreshed.servings), ingredients: outItems };
+    return {
+      id: id, name: String(refreshed.name),
+      name_es: trimStr(refreshed.name_es), name_free: trimStr(refreshed.name_free),
+      servings: cellToNum(refreshed.servings), ingredients: outItems
+    };
   });
 }
 
@@ -506,16 +592,16 @@ function resolveMealItems(items, foodTable) {
       foodRow = findFoodById(foodTable.rows, it.food_id);
     }
     if (!foodRow && it.food_name) {
-      foodRow = findFoodByName(foodTable.rows, it.food_name);
+      foodRow = findFoodByAnyName(foodTable.rows, it.food_name);
       if (!foodRow) {
-        var created = createFood({ name: it.food_name }); // blank nutrition
-        foodRow = { id: created.id, name: created.name };
+        var created = createFood({ name: it.food_name }); // typed text -> English name, blank nutrition
+        foodRow = { id: created.id, name: created.name, name_es: created.name_es, name_free: created.name_free };
         foodTable.rows.push(foodRow); // so repeated new names in one meal dedupe
       }
     }
     if (!foodRow) clientFail('unknown_food');
 
-    resolved.push({ food_id: foodRow.id, name: foodRow.name, quantity_g: qty });
+    resolved.push({ food_id: foodRow.id, name: displayName(foodRow), quantity_g: qty });
   }
   return resolved;
 }
@@ -628,7 +714,7 @@ function updateMeal(payload) {
     var refreshed = readTable('Meals').rows.filter(function (r) { return String(r.id) === id; })[0];
     if (outItems === null) {
       var foodNameById = {};
-      readTable('Foods').rows.forEach(function (f) { foodNameById[String(f.id)] = String(f.name); });
+      readTable('Foods').rows.forEach(function (f) { foodNameById[String(f.id)] = displayName(f); });
       outItems = mealItemRows(id).rows.length
         ? readTable('MealItems').rows
             .filter(function (r) { return String(r.meal_id) === id; })
@@ -673,7 +759,7 @@ function getMeals(payload) {
 
   var foodTable = readTable('Foods');
   var foodNameById = {};
-  foodTable.rows.forEach(function (f) { foodNameById[String(f.id)] = String(f.name); });
+  foodTable.rows.forEach(function (f) { foodNameById[String(f.id)] = displayName(f); });
 
   var itemTable = readTable('MealItems');
   itemTable.rows.forEach(function (row) {

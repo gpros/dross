@@ -5,6 +5,7 @@ import * as state from "../state.js";
 import * as api from "../api.js";
 import {
   el, clear, toast, normalizeText, renderTargetBars, formatNum,
+  displayName, matchingName, foodMatchesQuery, foodMatchesExact,
 } from "../ui.js";
 import { itemsTotals, mealsTotals, combineTotals } from "../nutrition.js";
 import { openTargetsEditor, promptQuantity } from "../editors.js";
@@ -81,7 +82,7 @@ export function createLogView(ctx) {
   async function addFoodToDraft(food) {
     const qty = await promptQuantity(food); // pass the food so serving chips can show
     if (qty == null) return;
-    state.addDraftItem({ food_id: food.id, name: food.name, quantity_g: qty });
+    state.addDraftItem({ food_id: food.id, name: displayName(food), quantity_g: qty });
     searchInput.value = "";
     renderResults("");
     renderItems();
@@ -107,10 +108,10 @@ export function createLogView(ctx) {
 
     const foods = state.getFoods();
     const matches = foods
-      .filter((f) => normalizeText(f.name).includes(q))
+      .filter((f) => foodMatchesQuery(f, q))
       .slice(0, 8);
 
-    const exact = foods.some((f) => normalizeText(f.name) === q);
+    const exact = foods.some((f) => foodMatchesExact(f, q));
 
     // "Add new" first if no exact match.
     if (!exact) {
@@ -126,7 +127,7 @@ export function createLogView(ctx) {
       const kcal = f.kcal_100g == null ? "—" : formatNum(f.kcal_100g) + " kcal/100g";
       resultsEl.appendChild(
         el("li", { onclick: () => addFoodToDraft(f) }, [
-          el("span", { text: (f.is_dish ? "🍲 " : "") + f.name }),
+          el("span", { text: (f.is_dish ? "🍲 " : "") + matchingName(f, q) }),
           el("span", { class: "meta", text: kcal }),
         ])
       );
@@ -141,7 +142,7 @@ export function createLogView(ctx) {
     freq.forEach((f) => {
       const food = state.getFoodById(f.food_id) || { id: f.food_id, name: f.name };
       chipsEl.appendChild(
-        el("button", { class: "chip", text: food.name, onclick: () => addFoodToDraft(food) })
+        el("button", { class: "chip", text: displayName(food), onclick: () => addFoodToDraft(food) })
       );
     });
   }

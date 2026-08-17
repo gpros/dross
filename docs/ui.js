@@ -74,6 +74,46 @@ export function normalizeText(s) {
     .trim();
 }
 
+// ---- Food names (English / Spanish / free-form) ----
+//
+// A food/dish carries up to three names: `name` (English, the primary), `name_es` (Spanish),
+// and `name_free` (a free-form label). At least one is set. Search matches any of them;
+// `displayName` is what we show outside of search results.
+
+// The food's three names in EN -> ES -> free order, trimmed, blanks removed.
+function foodNames(food) {
+  return [food.name, food.name_es, food.name_free]
+    .map((n) => (n == null ? "" : String(n).trim()))
+    .filter((n) => n !== "");
+}
+
+// The default name to display: first non-empty in EN -> ES -> free order.
+export function displayName(food) {
+  const names = foodNames(food);
+  return names.length ? names[0] : "(unnamed)";
+}
+
+// True if any of the food's names contains the normalized query `q`.
+export function foodMatchesQuery(food, q) {
+  return foodNames(food).some((n) => normalizeText(n).includes(q));
+}
+
+// True if any of the food's names equals the normalized query `q` (gates "Add as new").
+export function foodMatchesExact(food, q) {
+  return foodNames(food).some((n) => normalizeText(n) === q);
+}
+
+// The name to show in a search-result row: the first (EN -> ES -> free) name that matches
+// the active query, so the user sees why it matched. Falls back to displayName when there is
+// no query (or nothing matched).
+export function matchingName(food, q) {
+  if (q) {
+    const hit = foodNames(food).find((n) => normalizeText(n).includes(q));
+    if (hit) return hit;
+  }
+  return displayName(food);
+}
+
 // ---- Toast ----
 
 export function toast(message, { error = false, duration = 2600 } = {}) {
