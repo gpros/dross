@@ -1,5 +1,15 @@
 # Food Tracker
 
+A single-user app for logging what you eat and tracking it against daily nutrition targets —
+built to run for free with no servers to maintain.
+
+- **Log meals** from a searchable **Foods** catalog; per-meal nutrition is computed on the client.
+- **Daily targets** — four nutrition targets score every day; changing them re-scores past and future live.
+- **Foods catalog** — add/edit foods with per-100g nutrition and optional default serving sizes (½/1/2/3 chips).
+- **Dishes (recipes)** — compose a dish from ingredient foods; its nutrition is derived from the ingredients, so it stays correct when they change.
+- **History** — meals grouped by day with day totals; tap any meal to edit or delete it.
+- **Installable PWA**, system light/dark, and honest handling of incomplete data (blank ≠ 0; totals with unknowns shown as "≥" lower bounds).
+
 A personal, mobile-first food-logging web app. The frontend is a static site (vanilla
 HTML/CSS/JS, no build step) hosted on **GitHub Pages**; the database is a **Google Sheet**
 accessed through a **Google Apps Script Web App** that acts as a thin JSON API. Access is
