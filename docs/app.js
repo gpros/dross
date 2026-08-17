@@ -10,6 +10,10 @@ import { createFoodsView } from "./views/foods.js";
 import { createDishesView } from "./views/dishes.js";
 import { createHistoryView } from "./views/history.js";
 
+// Cosmetic frontend version — purely a visual cue to confirm which build is live.
+// Bump the number on every commit that changes the frontend.
+const APP_VERSION = "version 1";
+
 const signinScreen = document.getElementById("signin-screen");
 const appEl = document.getElementById("app");
 
@@ -42,6 +46,8 @@ function renderAccountFooter() {
     el("span", { text: "Signed in on " + auth.getEmail() }),
     document.createTextNode(" · "),
     el("button", { text: "Forget password", onclick: () => auth.signOut() }),
+    document.createTextNode(" · "),
+    el("span", { class: "muted", text: APP_VERSION }),
   ]);
   document.querySelector(".views").appendChild(footer);
 }
