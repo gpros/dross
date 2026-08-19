@@ -6,9 +6,9 @@ Notable changes to the Food Tracker, newest first. Dates are absolute.
 
 ### Popup polish
 
-Centered the `Foods | Dishes` segment in the bottom bar (✕ stays right), and inset the popup ~5px
-on the top/left/right so it's slightly narrower/centered and a bit taller (bottom stays flush).
-Version → **version 4**.
+Centered the `Foods | Dishes` segment in the bottom bar (✕ stays right), and turned the popup into
+a **centered floating card** (`min(92vw, 460px)` × `86vh`, rounded corners) so the dimmed Log shows
+around all four edges, instead of a near-full-screen sheet. Version → **version 5**.
 
 ## 2026-08-19
 

@@ -360,13 +360,14 @@ textarea { min-height: 60px; resize: vertical; }
   inset: 0;
   background: rgba(0, 0, 0, .45);
   display: grid;
-  place-items: end center;
+  place-items: center;  /* centered floating card; dimmed Log shows around it */
   z-index: 45; /* below the editors' modal-host (50) so an editor stacks on top of the popup */
 }
 .modal.page {
-  width: calc(100% - 10px);       /* 5px gap each side (base max-width:480px still caps desktop) */
-  height: calc(100vh - 5px);      /* 5px gap at the top; bottom stays flush */
-  max-height: calc(100vh - 5px);  /* override the base .modal max-height:88vh */
+  width: min(92vw, 460px);  /* ~4% side gaps, capped on desktop */
+  height: 86vh;             /* ~7% top/bottom gaps */
+  max-height: 86vh;         /* override the base .modal max-height:88vh */
+  border-radius: 18px;      /* round all corners (override base 18px 18px 0 0) now it floats */
   display: flex;
   flex-direction: column;
   padding: 0;        /* header/body manage their own padding */
