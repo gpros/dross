@@ -8,7 +8,8 @@ import { itemsTotals } from "../nutrition.js";
 import { openDishEditor } from "../editors.js";
 
 export function createDishesView(ctx) {
-  const root = document.getElementById("view-dishes");
+  const root = document.getElementById("view-dishes");   // list (scrolls in the popup body)
+  let controlsHost = null;                               // popup bottom bar (title + New dish)
 
   function summaryLine(dish) {
     // Per-serving if servings set, else whole-dish totals.
@@ -20,28 +21,31 @@ export function createDishesView(ctx) {
       `C ${geq("carbs")}${formatNum(totals.carbs * f, 1)} · F ${geq("fat")}${formatNum(totals.fat * f, 1)} g · ${label}`;
   }
 
-  function renderList() {
-    clear(root);
-
+  // Controls live in the popup's fixed bottom bar (title + New dish + hint).
+  function renderControls() {
+    if (!controlsHost) return;
+    clear(controlsHost);
     const addBtn = el("button", {
       class: "btn small primary", text: "+ New dish",
-      onclick: () => openDishEditor(null, { onSaved: renderList }),
+      onclick: () => openDishEditor(null, { onSaved: render }),
     });
-    root.appendChild(el("div", { class: "card" }, [
+    controlsHost.append(
       el("div", { class: "row between" }, [el("div", { class: "section-title", text: "Dishes" }), addBtn]),
       el("p", { class: "muted small", text: "Recipes built from foods. They appear in the Log search like any food." }),
-    ]));
+    );
+  }
 
+  function renderListBody() {
+    clear(root);
     const dishes = state.getDishes();
     if (!dishes.length) {
       root.appendChild(el("div", { class: "empty", text: "No dishes yet. Tap “+ New dish” to build one." }));
       return;
     }
-
     const list = el("div", {});
     dishes.forEach((dish) => {
       list.appendChild(el("button", {
-        class: "food-row", onclick: () => openDishEditor(dish, { onSaved: renderList }),
+        class: "food-row", onclick: () => openDishEditor(dish, { onSaved: render }),
       }, [
         el("span", { class: "fname", text: "🍲 " + displayName(dish) }),
         el("span", { class: "fmacros", text: summaryLine(dish) }),
@@ -50,8 +54,14 @@ export function createDishesView(ctx) {
     root.appendChild(el("div", { class: "card" }, [list]));
   }
 
-  function show() {
-    renderList();
+  function render() {
+    renderListBody();
+    renderControls();
+  }
+
+  function show(opts = {}, host) {
+    if (host) controlsHost = host;
+    render();
   }
 
   return { show };

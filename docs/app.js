@@ -12,12 +12,16 @@ import { createHistoryView } from "./views/history.js";
 
 // Cosmetic frontend version — purely a visual cue to confirm which build is live.
 // Bump the number on every commit that changes the frontend.
-const APP_VERSION = "version 2";
+const APP_VERSION = "version 3";
 
 const signinScreen = document.getElementById("signin-screen");
 const appEl = document.getElementById("app");
 const pageHost = document.getElementById("page-host");
+const pageHeadTop = document.getElementById("page-head-top");
 const pageHeadLeft = document.getElementById("page-head-left");
+const pageFoot = document.getElementById("page-foot");
+const catalogSeg = document.getElementById("catalog-seg");
+const catalogControls = document.getElementById("catalog-controls");
 
 let views = null;
 let started = false;
@@ -36,9 +40,13 @@ function showSection(name) {
 
 function closePage() { pageHost.hidden = true; }
 
-// Foods catalog popup, with a Foods | Dishes segmented control in the header.
+// Foods catalog popup. Segment + the active view's controls + close live in the fixed bottom bar
+// (#page-foot); the list scrolls in the body above. Each view renders its controls into
+// #catalog-controls and its list into its own section.
 function openCatalog(opts = {}) {
-  clear(pageHeadLeft);
+  pageHeadTop.hidden = true;   // catalog uses the bottom bar, not the top header
+  pageFoot.hidden = false;
+  clear(catalogSeg);
   const foodsBtn = el("button", { class: "seg-btn", role: "tab", "aria-selected": "true", text: "📋 Foods" });
   const dishesBtn = el("button", { class: "seg-btn", role: "tab", "aria-selected": "false", text: "🍲 Dishes" });
   function select(which) {
@@ -46,17 +54,20 @@ function openCatalog(opts = {}) {
     foodsBtn.setAttribute("aria-selected", String(isFoods));
     dishesBtn.setAttribute("aria-selected", String(!isFoods));
     showSection(which);
-    if (isFoods) views.foods.show(opts); else views.dishes.show();
+    if (isFoods) views.foods.show(opts, catalogControls);
+    else views.dishes.show({}, catalogControls);
   }
   foodsBtn.addEventListener("click", () => select("foods"));
   dishesBtn.addEventListener("click", () => select("dishes"));
-  pageHeadLeft.appendChild(el("div", { class: "segment", role: "tablist" }, [foodsBtn, dishesBtn]));
+  catalogSeg.appendChild(el("div", { class: "segment", role: "tablist" }, [foodsBtn, dishesBtn]));
   pageHost.hidden = false;
   select("foods");
 }
 
-// History popup (no segment — just a title).
+// History popup — top header (title + close), no bottom bar.
 function openHistory() {
+  pageFoot.hidden = true;
+  pageHeadTop.hidden = false;
   clear(pageHeadLeft);
   pageHeadLeft.appendChild(el("h2", { class: "page-title", text: "History" }));
   pageHost.hidden = false;
@@ -64,9 +75,10 @@ function openHistory() {
   views.history.show();
 }
 
-// Wire the popup's close affordances once (X button + tap-outside).
+// Wire the popup's close affordances once (both X buttons + tap-outside).
 function wirePage() {
-  document.getElementById("page-close").addEventListener("click", closePage);
+  document.getElementById("page-close-top").addEventListener("click", closePage);
+  document.getElementById("page-close-foot").addEventListener("click", closePage);
   pageHost.addEventListener("click", (e) => { if (e.target === pageHost) closePage(); });
 }
 

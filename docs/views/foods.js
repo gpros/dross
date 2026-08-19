@@ -12,7 +12,9 @@ function foodIsIncomplete(food) {
 }
 
 export function createFoodsView(ctx) {
-  const root = document.getElementById("view-foods");
+  const root = document.getElementById("view-foods");   // list (scrolls in the popup body)
+  let controlsHost = null;                              // popup bottom bar (search / add / filter)
+  let listEl = null;
   let query = "";
   let incompleteOnly = false;
   let loadError = false;
@@ -23,10 +25,11 @@ export function createFoodsView(ctx) {
     return food.serving_g != null ? `${base} · serv ${formatNum(food.serving_g)} g` : base;
   }
 
-  function renderList(listEl) {
+  function renderList() {
+    if (!listEl) return;
     clear(listEl);
     const q = normalizeText(query);
-    let foods = state.getFoods().filter((f) => !f.is_dish); // dishes live in the Dishes tab
+    let foods = state.getFoods().filter((f) => !f.is_dish); // dishes live in the Dishes segment
     if (q) foods = foods.filter((f) => foodMatchesQuery(f, q));
     if (incompleteOnly) foods = foods.filter(foodIsIncomplete);
 
@@ -39,7 +42,7 @@ export function createFoodsView(ctx) {
       const incomplete = foodIsIncomplete(food);
       const row = el("button", {
         class: "food-row",
-        onclick: () => openFoodEditor(food, { onSaved: () => renderList(listEl) }),
+        onclick: () => openFoodEditor(food, { onSaved: renderList }),
       }, [
         incomplete ? el("span", { class: "incomplete-dot", title: "Missing nutrition data" }) : el("span", { style: "width:8px" }),
         el("span", { class: "fname", text: matchingName(food, q) }),
@@ -49,53 +52,51 @@ export function createFoodsView(ctx) {
     });
   }
 
-  function renderView() {
-    clear(root);
+  // Controls live in the popup's fixed bottom bar (search, + Add food, Missing-data filter).
+  function renderControls() {
+    if (!controlsHost) return;
+    clear(controlsHost);
 
     const searchInput = el("input", {
       type: "search", placeholder: "Search foods…", value: query, autocomplete: "off",
     });
-    const listEl = el("div", { class: "food-list" });
-    searchInput.addEventListener("input", () => { query = searchInput.value; renderList(listEl); });
+    searchInput.addEventListener("input", () => { query = searchInput.value; renderList(); });
 
-    const toggle = el("label", { class: "filter-toggle" }, [
-      (() => {
-        const cb = el("input", { type: "checkbox" });
-        cb.checked = incompleteOnly;
-        cb.addEventListener("change", () => { incompleteOnly = cb.checked; renderList(listEl); });
-        return cb;
-      })(),
-      el("span", { text: "Missing data only" }),
-    ]);
+    const cb = el("input", { type: "checkbox" });
+    cb.checked = incompleteOnly;
+    cb.addEventListener("change", () => { incompleteOnly = cb.checked; renderList(); });
+    const toggle = el("label", { class: "filter-toggle" }, [cb, el("span", { text: "Missing data only" })]);
 
     const addBtn = el("button", {
       class: "btn small primary", text: "+ Add food",
-      onclick: () => openFoodEditor(null, { onSaved: () => renderList(listEl) }),
+      onclick: () => openFoodEditor(null, { onSaved: renderList }),
     });
 
-    root.appendChild(el("div", { class: "card" }, [
-      el("div", { class: "row between" }, [
-        el("div", { class: "section-title", text: "Foods" }),
-        addBtn,
-      ]),
+    controlsHost.append(
+      el("div", { class: "row between" }, [el("div", { class: "section-title", text: "Foods" }), addBtn]),
       searchInput,
       el("div", { class: "row between", style: "margin-top:10px" }, [toggle, el("span", {})]),
-    ]));
+    );
+  }
 
+  function renderView() {
+    clear(root);
+    listEl = el("div", { class: "food-list" });
     if (loadError) {
       root.appendChild(el("div", { class: "error" }, [
         "Couldn't load foods. ",
         el("button", { class: "btn small", text: "Retry", onclick: () => show() }),
       ]));
     }
-
     root.appendChild(el("div", { class: "card" }, [listEl]));
-    renderList(listEl);
+    renderList();
+    renderControls();
   }
 
-  async function show(opts = {}) {
+  async function show(opts = {}, host) {
+    if (host) controlsHost = host;
     // Deep-link from the summary's missing-data warning.
-    if (opts.filterIncomplete) incompleteOnly = true;
+    if (opts && opts.filterIncomplete) incompleteOnly = true;
 
     clear(root);
     root.appendChild(el("div", { class: "loading", text: "Loading…" }));

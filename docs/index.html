@@ -17,17 +17,25 @@
     <section id="view-log" class="view" data-view="log"></section>
   </main>
 
-  <!-- Popup host: a bottom sheet that slides over the Log screen. Closed via the X or backdrop. -->
+  <!-- Popup host: a bottom sheet that slides over the Log screen. Closed via an X or backdrop.
+       History uses the top header; the Foods/Dishes catalog uses the fixed bottom bar instead. -->
   <div id="page-host" class="page-host" hidden>
     <div class="modal page" role="dialog" aria-modal="true">
-      <div class="page-head">
-        <div id="page-head-left"></div>            <!-- title, or the Foods|Dishes segment -->
-        <button id="page-close" class="iconbtn" aria-label="Close">✕</button>
+      <div class="page-head" id="page-head-top">           <!-- History: title + close -->
+        <div id="page-head-left"></div>
+        <button id="page-close-top" class="iconbtn" aria-label="Close">✕</button>
       </div>
       <div class="page-body">
         <section id="view-foods" class="view" data-view="foods" hidden></section>
         <section id="view-dishes" class="view" data-view="dishes" hidden></section>
         <section id="view-history" class="view" data-view="history" hidden></section>
+      </div>
+      <div class="page-foot" id="page-foot" hidden>         <!-- Catalog: segment + controls + close -->
+        <div class="page-foot-head">
+          <div id="catalog-seg"></div>                     <!-- Foods|Dishes segment -->
+          <button id="page-close-foot" class="iconbtn" aria-label="Close">✕</button>
+        </div>
+        <div id="catalog-controls"></div>                  <!-- active view's controls -->
       </div>
     </div>
   </div>

@@ -4,6 +4,13 @@ Notable changes to the Food Tracker, newest first. Dates are absolute.
 
 ## 2026-08-19
 
+### Catalog controls pinned to a fixed bottom bar
+
+In the Foods/Dishes popup, the `Foods | Dishes` segment, the active view's controls (search, "+ Add
+food"/"+ New dish", "Missing data only"), and the ✕ now live in a **fixed bottom bar**; only the
+list scrolls above it. Each catalog view renders its list into the popup body and its controls into
+the bottom bar (`show(opts, controlsHost)`). History keeps its top header. Version → **version 3**.
+
 ### Log is the home screen; Foods/History become popups
 
 Reworked navigation. The bottom tab bar is gone; the **Log** screen is the single base view with
