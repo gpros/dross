@@ -12,7 +12,7 @@ import { createHistoryView } from "./views/history.js";
 
 // Cosmetic frontend version — purely a visual cue to confirm which build is live.
 // Bump the number on every commit that changes the frontend.
-const APP_VERSION = "version 5";
+const APP_VERSION = "version 6";
 
 const signinScreen = document.getElementById("signin-screen");
 const appEl = document.getElementById("app");

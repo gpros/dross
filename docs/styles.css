@@ -276,6 +276,7 @@ textarea { min-height: 60px; resize: vertical; }
 }
 .food-row .fname { flex: 1; font-weight: 550; }
 .food-row .fmacros { color: var(--muted); font-size: .8rem; font-variant-numeric: tabular-nums; }
+.food-list .food-row:last-child { border-bottom: none; } /* no dangling line after the last food */
 .incomplete-dot {
   width: 8px; height: 8px; border-radius: 50%;
   background: var(--warn); flex: none;

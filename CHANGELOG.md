@@ -4,6 +4,11 @@ Notable changes to the Food Tracker, newest first. Dates are absolute.
 
 ## 2026-08-20
 
+### Foods list: drop the surrounding card box
+
+Removed the bordered `.card` box around the Foods list (kept the thin separators between foods and
+trimmed the dangling line under the last one). Version → **version 6**.
+
 ### Popup polish
 
 Centered the `Foods | Dishes` segment in the bottom bar (✕ stays right), and turned the popup into

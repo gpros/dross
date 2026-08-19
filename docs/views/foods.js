@@ -88,7 +88,7 @@ export function createFoodsView(ctx) {
         el("button", { class: "btn small", text: "Retry", onclick: () => show() }),
       ]));
     }
-    root.appendChild(el("div", { class: "card" }, [listEl]));
+    root.appendChild(listEl); // no card box — just the rows with their separators
     renderList();
     renderControls();
   }
