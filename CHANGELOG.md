@@ -4,6 +4,11 @@ Notable changes to the Food Tracker, newest first. Dates are absolute.
 
 ## 2026-08-20
 
+### Popup flush at the bottom
+
+Bottom-anchored the popup and grew it to 93vh so it reaches the screen bottom (no bottom gap),
+keeping the top and side gaps. Rounded top corners only. Version → **version 7**.
+
 ### Foods list: drop the surrounding card box
 
 Removed the bordered `.card` box around the Foods list (kept the thin separators between foods and
