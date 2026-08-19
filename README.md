@@ -190,11 +190,11 @@ exists. It's idempotent (skips foods you already have) and you can delete the fi
   in-memory cache (no per-screen fetches). Saving a meal updates the cache locally. If the
   deployed backend predates `getBootstrap`, the app automatically falls back to fetching the
   pieces separately — so it keeps working even before you redeploy.
-- **Log is the home screen.** There's no bottom tab bar: **Foods** and **History** open as
-  bottom-sheet popups from buttons on the Log screen (close with the **X** or by tapping outside),
-  and **Dishes** lives inside the Foods popup as a *Foods | Dishes* segment. In the Foods/Dishes
-  catalog popup, the segment, search, "+ Add", filter, and **X** sit in a **fixed bottom bar** so
-  only the list scrolls. The add/edit editors (food, dish, meal) open on a higher layer, stacking
+- **Log is the home screen.** There's no bottom tab bar: **Foods** and **History** open as popups
+  from buttons on the Log screen — a card docked at the bottom of the screen with small gaps on the
+  top and sides (the dimmed Log shows around it); close with the **X** or by tapping outside. **Dishes**
+  lives inside the Foods popup as a *Foods | Dishes* segment. In the Foods/Dishes catalog popup, the
+  segment, search, "+ Add", filter, and **X** sit in a **fixed bottom bar** so only the list scrolls. The add/edit editors (food, dish, meal) open on a higher layer, stacking
   above an open popup and returning to it.
 - **Edit or delete a logged meal.** Tap any meal in **History** to change its time, note, or
   item quantities, add/remove items, or delete it (`updateMeal` / `deleteMeal`).
