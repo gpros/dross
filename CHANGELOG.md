@@ -2,6 +2,23 @@
 
 Notable changes to the Food Tracker, newest first. Dates are absolute.
 
+## 2026-08-19
+
+### Log is the home screen; Foods/History become popups
+
+Reworked navigation. The bottom tab bar is gone; the **Log** screen is the single base view with
+two buttons at the top:
+
+- **Foods** and **History** now open as **bottom-sheet popups** (title + **X** in the header; close
+  with the X or by tapping the backdrop).
+- **Dishes** folded into the Foods popup as a *Foods | Dishes* segmented control — one catalog popup.
+- The popups use a dedicated host at `z-index:45`, **below** the editors' `#modal-host` (50), so
+  add/edit editors (food, dish, meal) stack *above* an open popup and return to it on close.
+- The Log "missing data" warning now opens the Foods popup (with the incomplete filter) instead of
+  switching tabs.
+
+Frontend-only change → version label bumped to **version 2**.
+
 ## 2026-08-17
 
 ### Three names per food/dish (English / Spanish / free-form)

@@ -10,29 +10,27 @@
 <!-- Sign-in screen: the password prompt is rendered here by auth.js until unlocked. -->
 <div id="signin-screen" class="signin-screen" hidden></div>
 
-<!-- App shell: shown once authenticated. -->
+<!-- App shell: shown once authenticated. Log is the base screen; Foods/History (and Dishes,
+     folded into the Foods popup) open as a bottom-sheet popup inside #page-host. -->
 <div id="app" class="app" hidden>
   <main class="views">
     <section id="view-log" class="view" data-view="log"></section>
-    <section id="view-foods" class="view" data-view="foods" hidden></section>
-    <section id="view-dishes" class="view" data-view="dishes" hidden></section>
-    <section id="view-history" class="view" data-view="history" hidden></section>
   </main>
 
-  <nav class="tabbar" role="tablist" aria-label="Views">
-    <button class="tab" data-tab="log" role="tab" aria-selected="true">
-      <span class="tab-icon" aria-hidden="true">➕</span><span class="tab-label">Log</span>
-    </button>
-    <button class="tab" data-tab="foods" role="tab" aria-selected="false">
-      <span class="tab-icon" aria-hidden="true">📋</span><span class="tab-label">Foods</span>
-    </button>
-    <button class="tab" data-tab="dishes" role="tab" aria-selected="false">
-      <span class="tab-icon" aria-hidden="true">🍲</span><span class="tab-label">Dishes</span>
-    </button>
-    <button class="tab" data-tab="history" role="tab" aria-selected="false">
-      <span class="tab-icon" aria-hidden="true">🕘</span><span class="tab-label">History</span>
-    </button>
-  </nav>
+  <!-- Popup host: a bottom sheet that slides over the Log screen. Closed via the X or backdrop. -->
+  <div id="page-host" class="page-host" hidden>
+    <div class="modal page" role="dialog" aria-modal="true">
+      <div class="page-head">
+        <div id="page-head-left"></div>            <!-- title, or the Foods|Dishes segment -->
+        <button id="page-close" class="iconbtn" aria-label="Close">✕</button>
+      </div>
+      <div class="page-body">
+        <section id="view-foods" class="view" data-view="foods" hidden></section>
+        <section id="view-dishes" class="view" data-view="dishes" hidden></section>
+        <section id="view-history" class="view" data-view="history" hidden></section>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- Toast host -->

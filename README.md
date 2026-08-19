@@ -43,7 +43,7 @@ docs/                 ← GitHub Pages serves this folder
   index.html          app shell (password screen + views)
   styles.css          system-adaptive (light/dark) styles
   config.js           API_URL  ← you fill this in (non-secret; no password here)
-  app.js              entry: password gate + tab navigation
+  app.js              entry: password gate + Log screen; opens Foods/History popups
   auth.js             shared-secret gate (password screen, localStorage, re-prompt)
   api.js              fetch wrapper (POST text/plain, re-prompt + retry on bad password)
   state.js            in-memory catalog cache, settings, draft meal
@@ -53,7 +53,7 @@ docs/                 ← GitHub Pages serves this folder
   meals.js            day grouping, whole-day meal fetching, quick-pick frequency
   views/log.js        Log view (summary, search, chips, draft, save)
   views/foods.js      Foods catalog (list, filter, edit, add)
-  views/dishes.js     Dishes tab (create/edit recipes composed from foods)
+  views/dishes.js     Dishes (create/edit recipes); opened inside the Foods popup
   views/history.js    History (grouped by day, day totals, pagination)
   manifest.webmanifest + icon.svg   PWA "Add to Home Screen"
 apps-script/Code.gs   the entire backend
@@ -186,10 +186,14 @@ exists. It's idempotent (skips foods you already have) and you can delete the fi
   clears the stored password, re-prompts you, and retries the request once — so an
   in-progress meal survives (e.g. if you rotate the secret mid-session).
 - **One request on startup.** The app calls a single `getBootstrap` action that returns
-  foods + settings + a recent window of meals together, then serves every tab from that
-  in-memory cache (no per-tab fetches). Saving a meal updates the cache locally. If the
+  foods + settings + a recent window of meals together, then serves every screen from that
+  in-memory cache (no per-screen fetches). Saving a meal updates the cache locally. If the
   deployed backend predates `getBootstrap`, the app automatically falls back to fetching the
   pieces separately — so it keeps working even before you redeploy.
+- **Log is the home screen.** There's no bottom tab bar: **Foods** and **History** open as
+  bottom-sheet popups from buttons on the Log screen (close with the **X** or by tapping outside),
+  and **Dishes** lives inside the Foods popup as a *Foods | Dishes* segment. The add/edit editors
+  (food, dish, meal) open on a higher layer, stacking above an open popup and returning to it.
 - **Edit or delete a logged meal.** Tap any meal in **History** to change its time, note, or
   item quantities, add/remove items, or delete it (`updateMeal` / `deleteMeal`).
 - **Three names per food/dish.** Each food (and dish) can carry an English name (`name`, the
@@ -200,7 +204,7 @@ exists. It's idempotent (skips foods you already have) and you can delete the fi
   `name_free` columns — re-run `setupSheet()` after redeploying (see below).
 - **Default serving sizes.** Give a food an optional `serving_g`; when set, the quantity prompt
   offers ½/1/2/3-serving chips that fill in the grams. Storage stays in grams.
-- **Dishes (recipes).** In the **Dishes** tab, compose a dish from ingredient foods + grams
+- **Dishes (recipes).** In the **Dishes** section (inside the Foods popup), compose a dish from ingredient foods + grams
   (+ optional servings). A dish is stored as a food with a recipe (in the `Recipes` tab); its
   per-100g and per-serving nutrition are **computed on the client** from the ingredients, so
   it stays correct when an ingredient's nutrition is edited. Dishes appear in the Log search

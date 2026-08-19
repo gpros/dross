@@ -4,7 +4,7 @@
 import * as auth from "./auth.js";
 import * as state from "./state.js";
 import { setReauthHandler } from "./api.js";
-import { el, toast } from "./ui.js";
+import { el, clear, toast } from "./ui.js";
 import { createLogView } from "./views/log.js";
 import { createFoodsView } from "./views/foods.js";
 import { createDishesView } from "./views/dishes.js";
@@ -12,31 +12,62 @@ import { createHistoryView } from "./views/history.js";
 
 // Cosmetic frontend version — purely a visual cue to confirm which build is live.
 // Bump the number on every commit that changes the frontend.
-const APP_VERSION = "version 1";
+const APP_VERSION = "version 2";
 
 const signinScreen = document.getElementById("signin-screen");
 const appEl = document.getElementById("app");
+const pageHost = document.getElementById("page-host");
+const pageHeadLeft = document.getElementById("page-head-left");
 
 let views = null;
 let started = false;
 
-// Navigation context handed to each view.
-const ctx = { navigate };
+// Navigation context handed to each view: open the Foods/Dishes catalog or History as a popup.
+const ctx = { openCatalog, openHistory };
 
-function navigate(name, opts = {}) {
-  document.querySelectorAll(".view").forEach((sec) => {
-    sec.hidden = sec.dataset.view !== name;
+// ---- Page popup (Foods / Dishes / History, shown over the Log screen) ----
+
+// Show one of the popup's sections (foods|dishes|history), hide the others.
+function showSection(name) {
+  ["foods", "dishes", "history"].forEach((n) => {
+    document.getElementById("view-" + n).hidden = n !== name;
   });
-  document.querySelectorAll(".tab").forEach((t) => {
-    t.setAttribute("aria-selected", String(t.dataset.tab === name));
-  });
-  views[name].show(opts);
 }
 
-function wireTabs() {
-  document.querySelectorAll(".tab").forEach((tab) => {
-    tab.addEventListener("click", () => navigate(tab.dataset.tab));
-  });
+function closePage() { pageHost.hidden = true; }
+
+// Foods catalog popup, with a Foods | Dishes segmented control in the header.
+function openCatalog(opts = {}) {
+  clear(pageHeadLeft);
+  const foodsBtn = el("button", { class: "seg-btn", role: "tab", "aria-selected": "true", text: "📋 Foods" });
+  const dishesBtn = el("button", { class: "seg-btn", role: "tab", "aria-selected": "false", text: "🍲 Dishes" });
+  function select(which) {
+    const isFoods = which === "foods";
+    foodsBtn.setAttribute("aria-selected", String(isFoods));
+    dishesBtn.setAttribute("aria-selected", String(!isFoods));
+    showSection(which);
+    if (isFoods) views.foods.show(opts); else views.dishes.show();
+  }
+  foodsBtn.addEventListener("click", () => select("foods"));
+  dishesBtn.addEventListener("click", () => select("dishes"));
+  pageHeadLeft.appendChild(el("div", { class: "segment", role: "tablist" }, [foodsBtn, dishesBtn]));
+  pageHost.hidden = false;
+  select("foods");
+}
+
+// History popup (no segment — just a title).
+function openHistory() {
+  clear(pageHeadLeft);
+  pageHeadLeft.appendChild(el("h2", { class: "page-title", text: "History" }));
+  pageHost.hidden = false;
+  showSection("history");
+  views.history.show();
+}
+
+// Wire the popup's close affordances once (X button + tap-outside).
+function wirePage() {
+  document.getElementById("page-close").addEventListener("click", closePage);
+  pageHost.addEventListener("click", (e) => { if (e.target === pageHost) closePage(); });
 }
 
 function renderAccountFooter() {
@@ -65,7 +96,7 @@ async function startApp() {
       dishes: createDishesView(ctx),
       history: createHistoryView(ctx),
     };
-    wireTabs();
+    wirePage();
   }
 
   try {
@@ -75,7 +106,7 @@ async function startApp() {
   }
 
   renderAccountFooter();
-  navigate("log");
+  views.log.show(); // Log is the always-visible base screen
 }
 
 // Re-auth handler for api.js: show the password screen and resolve once re-entered.

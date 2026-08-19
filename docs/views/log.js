@@ -38,7 +38,7 @@ export function createLogView(ctx) {
       renderTargetBars(combined, state.getSettings(), {
         provisional: hasDraft,
         onEditTargets: () => openTargetsEditor({ onSaved: () => renderSummary() }),
-        onMissingClick: () => ctx.navigate("foods", { filterIncomplete: true }),
+        onMissingClick: () => ctx.openCatalog({ filterIncomplete: true }),
       })
     );
   }
@@ -208,6 +208,12 @@ export function createLogView(ctx) {
   // ---- Full render ----
   function renderView() {
     clear(root);
+
+    // Top launcher row: Foods (+ Dishes) and History open as popups over the Log screen.
+    root.appendChild(el("div", { class: "log-nav" }, [
+      el("button", { class: "btn small ghost", text: "📋 Foods", onclick: () => ctx.openCatalog() }),
+      el("button", { class: "btn small ghost", text: "🕘 History", onclick: () => ctx.openHistory() }),
+    ]));
 
     // Summary card.
     summaryBox = el("div", {});

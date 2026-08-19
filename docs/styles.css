@@ -19,7 +19,6 @@
   --over: #ea580c;
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 4px 12px rgba(0, 0, 0, 0.06);
   --radius: 14px;
-  --tabbar-h: 60px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -88,37 +87,18 @@ input, select, textarea { font: inherit; color: var(--text); }
 .views {
   max-width: 480px;
   margin: 0 auto;
-  padding: 16px 16px calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px) + 24px);
+  padding: 16px 16px calc(env(safe-area-inset-bottom, 0px) + 24px);
 }
 .view { animation: fade .18s ease; }
 @keyframes fade { from { opacity: .4; } to { opacity: 1; } }
 
-/* ---- Bottom tab bar ---- */
-.tabbar {
-  position: fixed;
-  left: 0; right: 0; bottom: 0;
+/* ---- Log launcher row (opens the Foods/History popups) ---- */
+.log-nav {
   display: flex;
-  height: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px));
-  padding-bottom: env(safe-area-inset-bottom, 0px);
-  background: var(--surface);
-  border-top: 1px solid var(--border);
-  z-index: 20;
+  gap: 10px;
+  margin-bottom: 14px;
 }
-.tab {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  background: none;
-  border: none;
-  color: var(--muted);
-  padding: 6px 0;
-}
-.tab[aria-selected="true"] { color: var(--accent); }
-.tab-icon { font-size: 20px; line-height: 1; }
-.tab-label { font-size: 11px; }
+.log-nav .btn { flex: 1; }
 
 /* ---- Cards / sections ---- */
 .card {
@@ -327,7 +307,7 @@ textarea { min-height: 60px; resize: vertical; }
 .toast-host {
   position: fixed;
   left: 0; right: 0;
-  bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px) + 16px);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 24px);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -373,6 +353,55 @@ textarea { min-height: 60px; resize: vertical; }
 .modal h2 { margin-bottom: 14px; }
 .modal .actions { display: flex; gap: 10px; margin-top: 16px; }
 .modal .actions .btn { flex: 1; }
+
+/* ---- Page popup (Foods / Dishes / History, shown over the Log screen) ---- */
+.page-host {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, .45);
+  display: grid;
+  place-items: end center;
+  z-index: 45; /* below the editors' modal-host (50) so an editor stacks on top of the popup */
+}
+.modal.page {
+  height: 88vh;
+  display: flex;
+  flex-direction: column;
+  padding: 0;        /* header/body manage their own padding */
+  overflow: hidden;  /* the body scrolls, not the sheet */
+}
+.page-head {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.page-title { margin: 0; font-size: 1.1rem; }
+.page-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 16px calc(20px + env(safe-area-inset-bottom, 0px));
+}
+/* Foods | Dishes segmented control in the popup header */
+.segment {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.seg-btn {
+  background: none;
+  border: none;
+  color: var(--muted);
+  padding: 7px 14px;
+  font-size: .9rem;
+}
+.seg-btn[aria-selected="true"] { background: var(--accent); color: var(--accent-contrast); }
 
 .footer-account {
   text-align: center;
