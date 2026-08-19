@@ -2,6 +2,14 @@
 
 Notable changes to the Food Tracker, newest first. Dates are absolute.
 
+## 2026-08-20
+
+### Popup polish
+
+Centered the `Foods | Dishes` segment in the bottom bar (✕ stays right), and inset the popup ~5px
+on the top/left/right so it's slightly narrower/centered and a bit taller (bottom stays flush).
+Version → **version 4**.
+
 ## 2026-08-19
 
 ### Catalog controls pinned to a fixed bottom bar

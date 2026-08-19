@@ -364,7 +364,9 @@ textarea { min-height: 60px; resize: vertical; }
   z-index: 45; /* below the editors' modal-host (50) so an editor stacks on top of the popup */
 }
 .modal.page {
-  height: 88vh;
+  width: calc(100% - 10px);       /* 5px gap each side (base max-width:480px still caps desktop) */
+  height: calc(100vh - 5px);      /* 5px gap at the top; bottom stays flush */
+  max-height: calc(100vh - 5px);  /* override the base .modal max-height:88vh */
   display: flex;
   flex-direction: column;
   padding: 0;        /* header/body manage their own padding */
@@ -398,11 +400,13 @@ textarea { min-height: 60px; resize: vertical; }
   gap: 10px;
 }
 .page-foot-head {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;  /* center the segment, pin the close button right */
   align-items: center;
-  justify-content: space-between;
   gap: 10px;
 }
+.page-foot-head > #catalog-seg { grid-column: 2; justify-self: center; }
+.page-foot-head > #page-close-foot { grid-column: 3; justify-self: end; }
 /* Foods | Dishes segmented control (in the catalog popup's bottom bar) */
 .segment {
   display: inline-flex;
