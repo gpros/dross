@@ -999,8 +999,8 @@ function resolveWorkoutItems(items, exTable) {
   var resolved = [];
   for (var i = 0; i < items.length; i++) {
     var it = items[i];
-    var reps = coercePositive(it.reps, 'bad_reps');
-    var sets = coercePositive(it.sets, 'bad_sets');
+    var reps = coerceOptional(it.reps, true, 'bad_reps');       // optional: time-only exercises have no reps
+    var sets = coerceOptional(it.sets, true, 'bad_sets');       // optional: time-only exercises have no sets
     var weight = coerceOptional(it.weight, false, 'bad_weight');
     var duration = coerceOptional(it.duration_min, true, 'bad_duration');
 
@@ -1033,8 +1033,8 @@ function writeWorkoutItems(workoutId, resolved) {
       id: itemId,
       workout_id: workoutId,
       exercise_id: resolved[j].exercise_id,
-      reps: resolved[j].reps,
-      sets: resolved[j].sets,
+      reps: resolved[j].reps === null ? '' : resolved[j].reps,
+      sets: resolved[j].sets === null ? '' : resolved[j].sets,
       weight: resolved[j].weight === null ? '' : resolved[j].weight,
       duration_min: resolved[j].duration_min === null ? '' : resolved[j].duration_min
     });

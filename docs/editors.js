@@ -521,8 +521,8 @@ export function openDishEditor(dish, { onSaved } = {}) {
 // The four numbers captured for one logged exercise. `short` labels the compact inline grid,
 // `long` labels the add prompt. reps/sets are required & positive; weight/duration optional.
 const SET_FIELDS = [
-  { key: "reps", short: "Reps", long: "Reps", positive: true, required: true },
-  { key: "sets", short: "Sets", long: "Sets", positive: true, required: true },
+  { key: "reps", short: "Reps", long: "Reps", positive: true, required: false },
+  { key: "sets", short: "Sets", long: "Sets", positive: true, required: false },
   { key: "weight", short: "Kg", long: "Weight (kg)", positive: false, required: false },
   { key: "duration_min", short: "Min", long: "Duration (min)", positive: true, required: false },
 ];
@@ -747,9 +747,7 @@ export function openWorkoutEditor(workout, { onSaved, onDeleted } = {}) {
   const saveBtn = el("button", { class: "btn primary", text: "Save" });
   saveBtn.addEventListener("click", async () => {
     if (!items.length) { toast("Add an exercise, or delete the workout.", { error: true }); return; }
-    for (const it of items) {
-      if (!(it.reps > 0) || !(it.sets > 0)) { toast(`Set reps and sets for “${it.name}”.`, { error: true }); return; }
-    }
+    // reps/sets/weight/duration are all optional (e.g. time-only exercises) — no per-item check.
     const iso = dateInput.value ? state.toLocalIso(new Date(dateInput.value)) : workout.timestamp;
     const payloadItems = items.map((it) => ({
       ...(it.exercise_id ? { exercise_id: it.exercise_id } : { exercise_name: it.name }),

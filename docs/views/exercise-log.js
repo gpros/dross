@@ -122,9 +122,7 @@ export function createExerciseLogView(ctx) {
   async function saveWorkout(dateInput, noteInput) {
     const draft = state.getExerciseDraft();
     if (!draft.items.length) return;
-    for (const it of draft.items) {
-      if (!(it.reps > 0) || !(it.sets > 0)) { toast(`Set reps and sets for “${it.name}”.`, { error: true }); return; }
-    }
+    // reps/sets/weight/duration are all optional (e.g. time-only exercises) — no per-item check.
 
     let iso = draft.timestamp;
     if (dateInput.value) iso = state.toLocalIso(new Date(dateInput.value));

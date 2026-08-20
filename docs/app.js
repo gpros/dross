@@ -15,7 +15,7 @@ import { createWorkoutsHistoryView } from "./views/workouts-history.js";
 
 // Cosmetic frontend version — purely a visual cue to confirm which build is live.
 // Bump the number on every commit that changes the frontend.
-const APP_VERSION = "version 10";
+const APP_VERSION = "version 11";
 
 const signinScreen = document.getElementById("signin-screen");
 const appEl = document.getElementById("app");
