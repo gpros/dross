@@ -68,6 +68,12 @@ export function bumpWorkoutsVersion() { workoutsVersion++; return workoutsVersio
 let foodsLoaded = false;
 let exercisesLoaded = false;
 
+// False until the first loadBootstrap() attempt finishes (success OR failure). Views use this
+// to show a loading placeholder for data-dependent widgets (e.g. the Log's macro summary)
+// while the initial request is in flight, instead of a misleading empty/zero state.
+let bootstrapDone = false;
+export function isBootstrapDone() { return bootstrapDone; }
+
 function indexFoods() {
   state.foodsById = new Map(state.foods.map((f) => [String(f.id), f]));
   state.foods.sort((a, b) => displayName(a).localeCompare(displayName(b), undefined, { sensitivity: "base" }));
@@ -193,6 +199,12 @@ export async function loadBootstrap() {
     } else {
       throw err;
     }
+  } finally {
+    // The initial load attempt has finished (success or failure). Clear the "loading" state
+    // and bump the versions so any view rendered off the empty cache re-derives real data.
+    bootstrapDone = true;
+    bumpMealsVersion();
+    bumpWorkoutsVersion();
   }
 }
 

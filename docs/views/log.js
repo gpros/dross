@@ -32,6 +32,15 @@ export function createLogView(ctx) {
   // ---- Summary (re-rendered live as the draft changes) ----
   function renderSummary() {
     clear(summaryBox);
+    // While the initial data is still loading, show a spinner instead of a misleading zero
+    // total. The rest of the Log renders normally; this swaps to real bars once loaded.
+    if (!state.isBootstrapDone()) {
+      summaryBox.appendChild(el("div", { class: "summary-loading" }, [
+        el("span", { class: "spinner", "aria-hidden": "true" }),
+        el("span", { class: "muted small", text: "Loading today's totals…" }),
+      ]));
+      return;
+    }
     const combined = combineTotals(todayTotals(), draftTotals());
     const hasDraft = !state.draftIsEmpty();
     summaryBox.appendChild(

@@ -15,7 +15,7 @@ import { createWorkoutsHistoryView } from "./views/workouts-history.js";
 
 // Cosmetic frontend version — purely a visual cue to confirm which build is live.
 // Bump the number on every commit that changes the frontend.
-const APP_VERSION = "version 9";
+const APP_VERSION = "version 10";
 
 const signinScreen = document.getElementById("signin-screen");
 const appEl = document.getElementById("app");
@@ -106,7 +106,10 @@ function openWorkoutHistory() {
 
 // ---- Bottom tab bar (switches the base page: Food entry <-> Exercise entry) ----
 
+let currentPage = "food";
+
 function showPage(page) {
+  currentPage = page;
   document.getElementById("view-log").hidden = page !== "food";
   document.getElementById("view-exercise-log").hidden = page !== "exercise";
   document.querySelectorAll("#tabbar .tab-btn").forEach((btn) => {
@@ -120,16 +123,6 @@ function wireTabbar() {
   document.querySelectorAll("#tabbar .tab-btn").forEach((btn) => {
     btn.addEventListener("click", () => showPage(btn.dataset.page));
   });
-}
-
-// Show/clear an in-app "Loading…" placeholder in the Food base view while the (slow) startup
-// request is in flight — the tab bar stays visible, so the user sees the app loading rather
-// than a black empty screen. showPage() renders over it once data is ready.
-function setAppLoading(on) {
-  const host = document.getElementById("view-log");
-  host.hidden = false;
-  clear(host);
-  if (on) host.appendChild(el("div", { class: "loading app-loading", text: "Loading your data…" }));
 }
 
 // Wire the popup's close affordances once (both X buttons + tap-outside).
@@ -172,17 +165,19 @@ async function startApp() {
     wireTabbar();
   }
 
-  // The startup request can take several seconds (Apps Script). Show a loading placeholder
-  // instead of a blank app while it's in flight.
-  setAppLoading(true);
+  // Render the Log shell immediately so the user sees the app right away; the macro summary
+  // card shows a spinner until the data arrives (state.isBootstrapDone()). The startup request
+  // can take several seconds (Apps Script), so we don't block the first paint on it.
+  renderAccountFooter();
+  showPage("food"); // Food Log is the default base screen; the tab bar switches to Exercise
+
   try {
-    await state.loadBootstrap(); // one request: foods + settings + recent meals
+    await state.loadBootstrap(); // one request: foods + settings + recent meals (+ exercises)
   } catch (err) {
     toast("Couldn't reach the server. Check config.js / your connection.", { error: true });
   }
 
-  renderAccountFooter();
-  showPage("food"); // Food Log is the default base screen; the tab bar switches to Exercise
+  showPage(currentPage); // re-render the active page now that the data is loaded
 }
 
 // Re-auth handler for api.js: show the password screen and resolve once re-entered.
