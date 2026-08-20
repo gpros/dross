@@ -15,7 +15,7 @@ import { createWorkoutsHistoryView } from "./views/workouts-history.js";
 
 // Cosmetic frontend version — purely a visual cue to confirm which build is live.
 // Bump the number on every commit that changes the frontend.
-const APP_VERSION = "version 8";
+const APP_VERSION = "version 9";
 
 const signinScreen = document.getElementById("signin-screen");
 const appEl = document.getElementById("app");
@@ -122,6 +122,16 @@ function wireTabbar() {
   });
 }
 
+// Show/clear an in-app "Loading…" placeholder in the Food base view while the (slow) startup
+// request is in flight — the tab bar stays visible, so the user sees the app loading rather
+// than a black empty screen. showPage() renders over it once data is ready.
+function setAppLoading(on) {
+  const host = document.getElementById("view-log");
+  host.hidden = false;
+  clear(host);
+  if (on) host.appendChild(el("div", { class: "loading app-loading", text: "Loading your data…" }));
+}
+
 // Wire the popup's close affordances once (both X buttons + tap-outside).
 function wirePage() {
   document.getElementById("page-close-top").addEventListener("click", closePage);
@@ -162,6 +172,9 @@ async function startApp() {
     wireTabbar();
   }
 
+  // The startup request can take several seconds (Apps Script). Show a loading placeholder
+  // instead of a blank app while it's in flight.
+  setAppLoading(true);
   try {
     await state.loadBootstrap(); // one request: foods + settings + recent meals
   } catch (err) {
