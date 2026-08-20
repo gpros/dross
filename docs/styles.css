@@ -87,7 +87,8 @@ input, select, textarea { font: inherit; color: var(--text); }
 .views {
   max-width: 480px;
   margin: 0 auto;
-  padding: 16px 16px calc(env(safe-area-inset-bottom, 0px) + 24px);
+  /* extra bottom padding clears the fixed tab bar (~60px) + safe area */
+  padding: 16px 16px calc(env(safe-area-inset-bottom, 0px) + 84px);
 }
 .view { animation: fade .18s ease; }
 @keyframes fade { from { opacity: .4; } to { opacity: 1; } }
@@ -432,3 +433,34 @@ textarea { min-height: 60px; resize: vertical; }
   padding: 8px 0 4px;
 }
 .footer-account button { color: var(--accent); background: none; border: none; }
+
+/* ---- Bottom tab bar (Food / Exercise base pages) ---- */
+.tabbar {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 30;              /* below the popup (45) + modal (50), so overlays cover it */
+  display: flex;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.tab-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  background: none;
+  border: none;
+  color: var(--muted);
+  padding: 8px 0 10px;
+  font-size: 20px;
+}
+.tab-btn .tab-label { font-size: .72rem; }
+.tab-btn[aria-selected="true"] { color: var(--accent); }
+
+/* ---- Exercise set fields (reps / sets / weight / duration grid) ---- */
+.exercise-item { flex-direction: column; align-items: stretch; gap: 8px; }
+.set-fields { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.set-field > span { display: block; font-size: .7rem; color: var(--muted); margin-bottom: 3px; text-align: center; }
+.set-input { width: 100%; text-align: center; padding: 8px 4px; }

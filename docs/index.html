@@ -15,6 +15,7 @@
 <div id="app" class="app" hidden>
   <main class="views">
     <section id="view-log" class="view" data-view="log"></section>
+    <section id="view-exercise-log" class="view" data-view="exercise-log" hidden></section>
   </main>
 
   <!-- Popup host: a bottom sheet that slides over the Log screen. Closed via an X or backdrop.
@@ -29,16 +30,24 @@
         <section id="view-foods" class="view" data-view="foods" hidden></section>
         <section id="view-dishes" class="view" data-view="dishes" hidden></section>
         <section id="view-history" class="view" data-view="history" hidden></section>
+        <section id="view-exercises" class="view" data-view="exercises" hidden></section>
+        <section id="view-workouts" class="view" data-view="workouts" hidden></section>
       </div>
       <div class="page-foot" id="page-foot" hidden>         <!-- Catalog: segment + controls + close -->
         <div class="page-foot-head">
-          <div id="catalog-seg"></div>                     <!-- Foods|Dishes segment -->
+          <div id="catalog-seg"></div>                     <!-- Foods|Dishes segment, or Exercises title -->
           <button id="page-close-foot" class="iconbtn" aria-label="Close">✕</button>
         </div>
         <div id="catalog-controls"></div>                  <!-- active view's controls -->
       </div>
     </div>
   </div>
+
+  <!-- Persistent bottom tab bar: switches the base page between Food and Exercise entry. -->
+  <nav class="tabbar" id="tabbar">
+    <button class="tab-btn" data-page="food" aria-selected="true">🍽<span class="tab-label">Food</span></button>
+    <button class="tab-btn" data-page="exercise" aria-selected="false">🏋<span class="tab-label">Exercise</span></button>
+  </nav>
 </div>
 
 <!-- Toast host -->

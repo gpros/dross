@@ -8,6 +8,7 @@ built to run for free with no servers to maintain.
 - **Foods catalog** — add/edit foods with per-100g nutrition and optional default serving sizes (½/1/2/3 chips). Each food carries **English / Spanish / free-form** names, and search matches any of them.
 - **Dishes (recipes)** — compose a dish from ingredient foods; its nutrition is derived from the ingredients, so it stays correct when they change.
 - **History** — meals grouped by day with day totals; tap any meal to edit or delete it.
+- **Exercise tracker** — a second feature reached from a **bottom tab bar** (🍽 Food / 🏋 Exercise). Log **workout sessions** of exercises, each with **reps, sets, weight, and duration**; an **Exercises catalog** (same three names + optional default reps/sets/weight/duration) and a **workout history**. Stored in the same Sheet on separate tabs.
 - **Installable PWA**, system light/dark, and honest handling of incomplete data (blank ≠ 0; totals with unknowns shown as "≥" lower bounds).
 
 A personal, mobile-first food-logging web app. The frontend is a static site (vanilla
@@ -27,7 +28,7 @@ protected by a single **shared password** you choose — no Google Sign-In, no O
 [ Google Apps Script Web App ]  ← checks the password, then reads/writes the Sheet
         │  SpreadsheetApp
         ▼
-[ Google Sheet: Foods · Meals · MealItems · Recipes · Settings ]
+[ Google Sheet: Foods · Meals · MealItems · Recipes · Settings · Exercises · Workouts · WorkoutItems ]
 ```
 
 > **Note on auth.** This uses a shared password for a fast, personal-MVP setup. It's not as
@@ -43,18 +44,21 @@ docs/                 ← GitHub Pages serves this folder
   index.html          app shell (password screen + views)
   styles.css          system-adaptive (light/dark) styles
   config.js           API_URL  ← you fill this in (non-secret; no password here)
-  app.js              entry: password gate + Log screen; opens Foods/History popups
+  app.js              entry: password gate + bottom tab bar (Food/Exercise); opens catalog/history popups
   auth.js             shared-secret gate (password screen, localStorage, re-prompt)
   api.js              fetch wrapper (POST text/plain, re-prompt + retry on bad password)
   state.js            in-memory catalog cache, settings, draft meal
   nutrition.js        client-side totals + "incomplete data" flags
   ui.js               escaping, toast, decimal parsing, shared summary-bar component
-  editors.js          targets editor, food add/edit, quantity prompt (modals)
-  meals.js            day grouping, whole-day meal fetching, quick-pick frequency
+  editors.js          targets/food/quantity modals + exercise editor, set prompt, workout editor
+  meals.js            day grouping, meal fetching, quick-pick frequency (foods + exercises)
   views/log.js        Log view (summary, search, chips, draft, save)
   views/foods.js      Foods catalog (list, filter, edit, add)
   views/dishes.js     Dishes (create/edit recipes); opened inside the Foods popup
   views/history.js    History (grouped by day, day totals, pagination)
+  views/exercise-log.js     Exercise Log view (search, chips, draft workout, save)
+  views/exercises.js        Exercises catalog (list, edit, add)
+  views/workouts-history.js Workout history (grouped by day, pagination)
   manifest.webmanifest + icon.svg   PWA "Add to Home Screen"
 apps-script/Code.gs   the entire backend
 apps-script/seed_foods.gs   optional ~200-food Mediterranean starter list (seedFoods())
@@ -82,9 +86,10 @@ You'll do this once. Budget ~10 minutes. Two moving parts: the **Sheet + Apps Sc
    - ⚠️ **The first Run usually only completes the authorization and does NOT run the
      function.** After granting permission, click **▶ Run** again to actually execute it.
      Check **View ▸ Executions** — you want a `setupSheet` run marked *Completed*.
-   - Go back to the Sheet tab and **reload the page**: you now have five tabs — **Foods**,
-     **Meals**, **MealItems**, **Recipes**, **Settings** — each with a header row. (Re-running
-     `setupSheet` is safe.)
+   - Go back to the Sheet tab and **reload the page**: you now have eight tabs — **Foods**,
+     **Meals**, **MealItems**, **Recipes**, **Settings**, **Exercises**, **Workouts**,
+     **WorkoutItems** — each with a header row. (Re-running `setupSheet` is safe; it also
+     back-fills any new tabs/columns added by a later version.)
 
 ### 2. Set your password and deploy the Web App
 
@@ -239,7 +244,8 @@ exists. It's idempotent (skips foods you already have) and you can delete the fi
 ## Extending it later
 
 The code is structured so these drop in without rework: weekly/monthly dashboards (same
-client-side math over the paginated `getMeals`), exercise tracking (a new tab + new
-`ACTIONS` entries via the generic dispatch), editing past meals, and soft-deleting foods.
-Columns are read by header name, so adding fields (fiber, sugar, …) to a tab won't break
-anything.
+client-side math over the paginated `getMeals`/`getWorkouts`), editing past meals, and
+soft-deleting foods. The **exercise tracker** was itself added this way — new tabs plus new
+`ACTIONS` entries via the generic dispatch, reusing the header-driven sheet helpers. Columns
+are read by header name, so adding fields (fiber, sugar, exercise metrics, …) to a tab won't
+break anything.

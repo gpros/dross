@@ -24,7 +24,11 @@ var SHEETS = {
   Meals: ['id', 'timestamp', 'note'],
   MealItems: ['id', 'meal_id', 'food_id', 'quantity_g'],
   Recipes: ['id', 'dish_id', 'food_id', 'quantity_g'],
-  Settings: ['key', 'value']
+  Settings: ['key', 'value'],
+  // Exercise tracker (parallel to Foods/Meals/MealItems, same spreadsheet, separate tabs).
+  Exercises: ['id', 'name', 'name_es', 'name_free', 'default_reps', 'default_sets', 'default_weight', 'default_duration_min', 'created_at'],
+  Workouts: ['id', 'timestamp', 'note'],
+  WorkoutItems: ['id', 'workout_id', 'exercise_id', 'reps', 'sets', 'weight', 'duration_min']
 };
 
 var NUTRIENT_KEYS = ['kcal_100g', 'protein_100g', 'carbs_100g', 'fat_100g'];
@@ -354,7 +358,14 @@ var ACTIONS = {
   deleteMeal: deleteMeal,
   getMeals: getMeals,
   getSettings: getSettings,
-  updateSettings: updateSettings
+  updateSettings: updateSettings,
+  getExercises: getExercises,
+  addExercise: addExercise,
+  updateExercise: updateExercise,
+  addWorkout: addWorkout,
+  updateWorkout: updateWorkout,
+  deleteWorkout: deleteWorkout,
+  getWorkouts: getWorkouts
 };
 
 // One-shot startup payload: foods + settings + a recent window of meals, so the client
@@ -364,13 +375,18 @@ function getBootstrap(payload) {
   var limit = parseInt(payload && payload.limit, 10);
   if (isNaN(limit) || limit <= 0) limit = 100;
   var mealsResult = getMeals({ limit: limit });
+  var workoutsResult = getWorkoutsSafe(limit);
   return {
     foods: getFoods().foods,
     settings: getSettings().settings,
     meals: mealsResult.meals,
     hasMore: mealsResult.hasMore,
     nextBefore: mealsResult.nextBefore,
-    recipes: getRecipesSafe()
+    recipes: getRecipesSafe(),
+    exercises: getExercisesSafe(),
+    workouts: workoutsResult.workouts,
+    workoutsHasMore: workoutsResult.hasMore,
+    workoutsNextBefore: workoutsResult.nextBefore
   };
 }
 
@@ -381,6 +397,20 @@ function getRecipesSafe() {
   return readTable('Recipes').rows.map(function (r) {
     return { dish_id: String(r.dish_id), food_id: String(r.food_id), quantity_g: cellToNum(r.quantity_g) };
   });
+}
+
+/** All exercises, or [] if the Exercises tab doesn't exist yet (setupSheet not re-run). */
+function getExercisesSafe() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss.getSheetByName('Exercises')) return [];
+  return getExercises().exercises;
+}
+
+/** Recent workouts, or an empty page if the Workouts tab doesn't exist yet. */
+function getWorkoutsSafe(limit) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss.getSheetByName('Workouts')) return { workouts: [], hasMore: false, nextBefore: null };
+  return getWorkouts({ limit: limit });
 }
 
 function getFoods() {
@@ -820,6 +850,348 @@ function updateSettings(payload) {
 
     return getSettings();
   });
+}
+
+// ---- Exercise tracker ---------------------------------------------------------
+// Parallel to the food side: Exercises (master catalog, mirror of Foods) + Workouts
+// (log header, mirror of Meals) + WorkoutItems (log line items, mirror of MealItems).
+// The generic row helpers (readNames, namesOf, displayName, findFoodById/ByName/ByAnyName,
+// readTable, appendRow, deleteRows) are shared unchanged.
+
+function exerciseOut(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    name_es: trimStr(row.name_es),
+    name_free: trimStr(row.name_free),
+    default_reps: cellToNum(row.default_reps),
+    default_sets: cellToNum(row.default_sets),
+    default_weight: cellToNum(row.default_weight),
+    default_duration_min: cellToNum(row.default_duration_min)
+  };
+}
+
+/**
+ * Normalize an optional numeric field from a payload (present/clear/set), like normNutrient
+ * but with a caller-chosen error code and positivity rule. Used for the exercise defaults.
+ *   positive:true  => value must be > 0     positive:false => value must be >= 0
+ */
+function normOptionalNum(payload, field, positive, errorCode) {
+  if (!payload.hasOwnProperty(field)) return { present: false, value: null };
+  var v = payload[field];
+  if (v === null || v === '' || v === undefined) return { present: true, value: null };
+  var n = (typeof v === 'number') ? v : Number(String(v).replace(',', '.').trim());
+  if (isNaN(n) || (positive ? n <= 0 : n < 0)) clientFail(errorCode);
+  return { present: true, value: n };
+}
+
+/** Coerce a required strictly-positive raw value (reps/sets on a logged item). */
+function coercePositive(v, code) {
+  var n = (typeof v === 'number') ? v : Number(String(v).replace(',', '.').trim());
+  if (isNaN(n) || n <= 0) clientFail(code);
+  return n;
+}
+
+/** Coerce an optional raw value (weight/duration on a logged item); '' -> null. */
+function coerceOptional(v, positive, code) {
+  if (v === null || v === '' || v === undefined) return null;
+  var n = (typeof v === 'number') ? v : Number(String(v).replace(',', '.').trim());
+  if (isNaN(n) || (positive ? n <= 0 : n < 0)) clientFail(code);
+  return n;
+}
+
+var EX_DEFAULTS = [
+  { field: 'default_reps', positive: true, code: 'bad_reps' },
+  { field: 'default_sets', positive: true, code: 'bad_sets' },
+  { field: 'default_weight', positive: false, code: 'bad_weight' },
+  { field: 'default_duration_min', positive: true, code: 'bad_duration' }
+];
+
+/** Create an exercise (blank defaults allowed) if the name is new; return its output row. */
+function createExercise(payload) {
+  var names = readNames(payload);
+  var name = names.name.value, nameEs = names.name_es.value, nameFree = names.name_free.value;
+  if (!name && !nameEs && !nameFree) clientFail('bad_name');
+
+  var table = readTable('Exercises');
+  if (name) {
+    var existing = findFoodByName(table.rows, name); // English-name idempotency
+    if (existing) return exerciseOut(existing);
+  }
+
+  var vals = {};
+  EX_DEFAULTS.forEach(function (d) { vals[d.field] = normOptionalNum(payload, d.field, d.positive, d.code); });
+
+  var id = Utilities.getUuid();
+  var appendObj = { id: id, name: name, name_es: nameEs, name_free: nameFree, created_at: new Date().toISOString() };
+  EX_DEFAULTS.forEach(function (d) {
+    var v = vals[d.field];
+    appendObj[d.field] = v.present && v.value !== null ? v.value : '';
+  });
+  appendRow('Exercises', appendObj);
+
+  var out = { id: id, name: name, name_es: nameEs, name_free: nameFree };
+  EX_DEFAULTS.forEach(function (d) { out[d.field] = vals[d.field].present ? vals[d.field].value : null; });
+  return out;
+}
+
+function getExercises() {
+  var table = readTable('Exercises');
+  return { exercises: table.rows.map(exerciseOut) };
+}
+
+function addExercise(payload) {
+  return withLock(function () { return createExercise(payload); });
+}
+
+function updateExercise(payload) {
+  return withLock(function () {
+    var id = trimStr(payload.id);
+    if (!id) clientFail('bad_request');
+
+    var table = readTable('Exercises');
+    var target = findFoodById(table.rows, id);
+    if (!target) clientFail('not_found');
+
+    var updates = {};
+
+    // Names: independently settable/clearable; at least one must remain, English stays unique.
+    var names = readNames(payload);
+    var effName = names.name.present ? names.name.value : trimStr(target.name);
+    var effEs = names.name_es.present ? names.name_es.value : trimStr(target.name_es);
+    var effFree = names.name_free.present ? names.name_free.value : trimStr(target.name_free);
+    if (!effName && !effEs && !effFree) clientFail('bad_name');
+    if (names.name.present) {
+      if (effName) {
+        var collision = findFoodByName(table.rows, effName);
+        if (collision && String(collision.id) !== id) clientFail('name_taken');
+      }
+      updates.name = effName;
+    }
+    if (names.name_es.present) updates.name_es = effEs;
+    if (names.name_free.present) updates.name_free = effFree;
+
+    EX_DEFAULTS.forEach(function (d) {
+      var n = normOptionalNum(payload, d.field, d.positive, d.code);
+      if (!n.present) return;
+      updates[d.field] = n.value === null ? '' : n.value;
+    });
+
+    var sheet = table.sheet;
+    Object.keys(updates).forEach(function (header) {
+      var c = colIndex(table.headers, header) + 1;
+      sheet.getRange(target.__row, c).setValue(updates[header]);
+    });
+
+    var refreshed = readTable('Exercises');
+    return exerciseOut(findFoodById(refreshed.rows, id));
+  });
+}
+
+/**
+ * Resolve workout-item inputs to concrete exercises, creating new exercises (blank defaults)
+ * for any `exercise_name` not yet in the catalog. Returns
+ * [{exercise_id, name, reps, sets, weight, duration_min}]. Shared by addWorkout/updateWorkout.
+ * `exTable` is a readTable('Exercises') result (mutated so repeated new names in one request
+ * dedupe).
+ */
+function resolveWorkoutItems(items, exTable) {
+  var resolved = [];
+  for (var i = 0; i < items.length; i++) {
+    var it = items[i];
+    var reps = coercePositive(it.reps, 'bad_reps');
+    var sets = coercePositive(it.sets, 'bad_sets');
+    var weight = coerceOptional(it.weight, false, 'bad_weight');
+    var duration = coerceOptional(it.duration_min, true, 'bad_duration');
+
+    var exRow = null;
+    if (it.exercise_id) exRow = findFoodById(exTable.rows, it.exercise_id);
+    if (!exRow && it.exercise_name) {
+      exRow = findFoodByAnyName(exTable.rows, it.exercise_name);
+      if (!exRow) {
+        var created = createExercise({ name: it.exercise_name }); // typed text -> English name
+        exRow = { id: created.id, name: created.name, name_es: created.name_es, name_free: created.name_free };
+        exTable.rows.push(exRow); // so repeated new names in one workout dedupe
+      }
+    }
+    if (!exRow) clientFail('unknown_exercise');
+
+    resolved.push({
+      exercise_id: exRow.id, name: displayName(exRow),
+      reps: reps, sets: sets, weight: weight, duration_min: duration
+    });
+  }
+  return resolved;
+}
+
+/** Append WorkoutItems rows for `resolved` under `workoutId`; return them as output items. */
+function writeWorkoutItems(workoutId, resolved) {
+  var outItems = [];
+  for (var j = 0; j < resolved.length; j++) {
+    var itemId = Utilities.getUuid();
+    appendRow('WorkoutItems', {
+      id: itemId,
+      workout_id: workoutId,
+      exercise_id: resolved[j].exercise_id,
+      reps: resolved[j].reps,
+      sets: resolved[j].sets,
+      weight: resolved[j].weight === null ? '' : resolved[j].weight,
+      duration_min: resolved[j].duration_min === null ? '' : resolved[j].duration_min
+    });
+    outItems.push({
+      id: itemId,
+      exercise_id: resolved[j].exercise_id,
+      name: resolved[j].name,
+      reps: resolved[j].reps,
+      sets: resolved[j].sets,
+      weight: resolved[j].weight,
+      duration_min: resolved[j].duration_min
+    });
+  }
+  return outItems;
+}
+
+/** Row numbers (1-based) of WorkoutItems belonging to a workout. */
+function workoutItemRows(workoutId) {
+  var table = readTable('WorkoutItems');
+  var rows = [];
+  table.rows.forEach(function (r) {
+    if (String(r.workout_id) === String(workoutId)) rows.push(r.__row);
+  });
+  return { sheet: table.sheet, rows: rows };
+}
+
+function addWorkout(payload) {
+  return withLock(function () {
+    var items = payload.items;
+    if (!items || !items.length) clientFail('empty_workout');
+
+    var timestamp = trimStr(payload.timestamp);
+    if (!timestamp) timestamp = new Date().toISOString();
+    var note = trimStr(payload.note);
+
+    var exTable = readTable('Exercises');
+    var resolved = resolveWorkoutItems(items, exTable);
+
+    var workoutId = Utilities.getUuid();
+    appendRow('Workouts', { id: workoutId, timestamp: timestamp, note: note });
+    var outItems = writeWorkoutItems(workoutId, resolved);
+
+    return { id: workoutId, timestamp: timestamp, note: note, items: outItems };
+  });
+}
+
+function deleteWorkout(payload) {
+  return withLock(function () {
+    var id = trimStr(payload.id);
+    if (!id) clientFail('bad_request');
+
+    var workoutTable = readTable('Workouts');
+    var workout = workoutTable.rows.filter(function (r) { return String(r.id) === id; })[0];
+    if (!workout) clientFail('not_found');
+
+    var items = workoutItemRows(id);
+    deleteRows(items.sheet, items.rows);
+    workoutTable.sheet.deleteRow(workout.__row);
+    return { id: id };
+  });
+}
+
+function updateWorkout(payload) {
+  return withLock(function () {
+    var id = trimStr(payload.id);
+    if (!id) clientFail('bad_request');
+
+    var workoutTable = readTable('Workouts');
+    var workout = workoutTable.rows.filter(function (r) { return String(r.id) === id; })[0];
+    if (!workout) clientFail('not_found');
+    var sheet = workoutTable.sheet;
+
+    var outItems = null;
+    if (payload.hasOwnProperty('items')) {
+      if (!payload.items || !payload.items.length) clientFail('empty_workout');
+      var resolved = resolveWorkoutItems(payload.items, readTable('Exercises'));
+      var old = workoutItemRows(id);
+      deleteRows(old.sheet, old.rows);
+      outItems = writeWorkoutItems(id, resolved);
+    }
+
+    if (payload.hasOwnProperty('timestamp')) {
+      var ts = trimStr(payload.timestamp) || new Date().toISOString();
+      sheet.getRange(workout.__row, colIndex(workoutTable.headers, 'timestamp') + 1).setValue(ts);
+    }
+    if (payload.hasOwnProperty('note')) {
+      sheet.getRange(workout.__row, colIndex(workoutTable.headers, 'note') + 1).setValue(trimStr(payload.note));
+    }
+
+    var refreshed = readTable('Workouts').rows.filter(function (r) { return String(r.id) === id; })[0];
+    if (outItems === null) {
+      var exNameById = {};
+      readTable('Exercises').rows.forEach(function (ex) { exNameById[String(ex.id)] = displayName(ex); });
+      outItems = workoutItemRows(id).rows.length
+        ? readTable('WorkoutItems').rows
+            .filter(function (r) { return String(r.workout_id) === id; })
+            .map(function (r) {
+              return {
+                id: String(r.id), exercise_id: String(r.exercise_id),
+                name: exNameById[String(r.exercise_id)] || '(unknown)',
+                reps: cellToNum(r.reps), sets: cellToNum(r.sets),
+                weight: cellToNum(r.weight), duration_min: cellToNum(r.duration_min)
+              };
+            })
+        : [];
+    }
+    return {
+      id: id,
+      timestamp: tsToIso(refreshed.timestamp),
+      note: refreshed.note === '' ? '' : String(refreshed.note),
+      items: outItems
+    };
+  });
+}
+
+function getWorkouts(payload) {
+  var limit = parseInt(payload.limit, 10);
+  if (isNaN(limit) || limit <= 0) limit = 20;
+  var before = trimStr(payload.before); // ISO cursor; return workouts strictly before this
+
+  var workoutTable = readTable('Workouts');
+  var workouts = workoutTable.rows.map(function (r) {
+    return { id: String(r.id), timestamp: tsToIso(r.timestamp), note: r.note === '' ? '' : String(r.note) };
+  });
+
+  workouts.sort(function (a, b) { return a.timestamp < b.timestamp ? 1 : (a.timestamp > b.timestamp ? -1 : 0); });
+
+  if (before) {
+    workouts = workouts.filter(function (m) { return m.timestamp < before; });
+  }
+
+  var hasMore = workouts.length > limit;
+  var page = workouts.slice(0, limit);
+
+  var ids = {};
+  page.forEach(function (m) { ids[m.id] = m; m.items = []; });
+
+  var exTable = readTable('Exercises');
+  var exNameById = {};
+  exTable.rows.forEach(function (ex) { exNameById[String(ex.id)] = displayName(ex); });
+
+  var itemTable = readTable('WorkoutItems');
+  itemTable.rows.forEach(function (row) {
+    var m = ids[String(row.workout_id)];
+    if (!m) return;
+    m.items.push({
+      exercise_id: String(row.exercise_id),
+      name: exNameById[String(row.exercise_id)] || '(unknown)',
+      reps: cellToNum(row.reps),
+      sets: cellToNum(row.sets),
+      weight: cellToNum(row.weight),
+      duration_min: cellToNum(row.duration_min)
+    });
+  });
+
+  var nextBefore = page.length ? page[page.length - 1].timestamp : null;
+  return { workouts: page, hasMore: hasMore, nextBefore: nextBefore };
 }
 
 // ---- Timestamp helper ---------------------------------------------------------

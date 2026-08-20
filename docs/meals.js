@@ -100,3 +100,20 @@ export function frequentFoods(meals, n = 8) {
     .sort((a, b) => b.count - a.count)
     .slice(0, n);
 }
+
+// The ~n most frequently used exercises across the given workouts, most frequent first.
+// Returns [{ exercise_id, name, count }]. Mirrors frequentFoods (groupByDay/timeLabel are
+// already generic over any timestamped items, so they're reused as-is for workouts).
+export function frequentExercises(workouts, n = 8) {
+  const counts = new Map();
+  workouts.forEach((w) => (w.items || []).forEach((it) => {
+    if (!it.exercise_id) return;
+    const cur = counts.get(it.exercise_id) || { exercise_id: it.exercise_id, name: it.name, count: 0 };
+    cur.count += 1;
+    cur.name = it.name; // keep latest name
+    counts.set(it.exercise_id, cur);
+  }));
+  return Array.from(counts.values())
+    .sort((a, b) => b.count - a.count)
+    .slice(0, n);
+}

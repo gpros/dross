@@ -20,6 +20,18 @@ const state = {
     note: "",
     items: [],        // [{food_id?, food_name?, name, quantity_g, kcal_100g?, ...}]
   },
+
+  // ---- Exercise tracker (parallel to foods/meals/draft above) ----
+  exercises: [],      // [{id, name, name_es, name_free, default_reps, default_sets, default_weight, default_duration_min}]
+  exercisesById: new Map(),
+  workouts: [],       // recent window of workouts, newest-first (shared by Exercise Log + History)
+  workoutsHasMore: false,
+  workoutsNextBefore: null,
+  exerciseDraft: {    // in-progress workout on the Exercise Log view
+    timestamp: null,
+    note: "",
+    items: [],        // [{exercise_id?, exercise_name?, name, reps, sets, weight, duration_min}]
+  },
 };
 
 const BOOTSTRAP_LIMIT = 100; // recent meals preloaded on startup (covers today + quick-picks)
@@ -27,6 +39,13 @@ const BOOTSTRAP_LIMIT = 100; // recent meals preloaded on startup (covers today 
 export function getFoods() { return state.foods; }
 export function getFoodById(id) { return state.foodsById.get(String(id)) || null; }
 export function getDishes() { return state.foods.filter((f) => f.is_dish); }
+
+export function getExercises() { return state.exercises; }
+export function getExerciseById(id) { return state.exercisesById.get(String(id)) || null; }
+export function getRecentWorkouts() { return state.workouts; }
+export function getWorkoutsHasMore() { return state.workoutsHasMore; }
+export function getWorkoutsNextBefore() { return state.workoutsNextBefore; }
+export function getExerciseDraft() { return state.exerciseDraft; }
 export function getRecipe(dishId) { return state.recipes[String(dishId)] || []; }
 export function getSettings() { return state.settings; }
 export function getDraft() { return state.draft; }
@@ -41,11 +60,22 @@ let mealsVersion = 0;
 export function getMealsVersion() { return mealsVersion; }
 export function bumpMealsVersion() { mealsVersion++; return mealsVersion; }
 
+// Same idea as mealsVersion, for workouts (see getWorkoutsVersion callers in the exercise views).
+let workoutsVersion = 0;
+export function getWorkoutsVersion() { return workoutsVersion; }
+export function bumpWorkoutsVersion() { workoutsVersion++; return workoutsVersion; }
+
 let foodsLoaded = false;
+let exercisesLoaded = false;
 
 function indexFoods() {
   state.foodsById = new Map(state.foods.map((f) => [String(f.id), f]));
   state.foods.sort((a, b) => displayName(a).localeCompare(displayName(b), undefined, { sensitivity: "base" }));
+}
+
+function indexExercises() {
+  state.exercisesById = new Map(state.exercises.map((e) => [String(e.id), e]));
+  state.exercises.sort((a, b) => displayName(a).localeCompare(displayName(b), undefined, { sensitivity: "base" }));
 }
 
 const DISH_KEYS = ["kcal_100g", "protein_100g", "carbs_100g", "fat_100g"];
@@ -109,6 +139,25 @@ function setMeals(list, hasMore, nextBefore) {
   state.mealsNextBefore = nextBefore ?? null;
 }
 
+function setExercises(list) {
+  state.exercises = list || [];
+  indexExercises();
+  exercisesLoaded = true;
+}
+
+function setWorkouts(list, hasMore, nextBefore) {
+  state.workouts = list || [];
+  state.workoutsHasMore = !!hasMore;
+  state.workoutsNextBefore = nextBefore ?? null;
+}
+
+export async function loadExercises(force = false) {
+  if (exercisesLoaded && !force) return state.exercises;
+  const data = await api.getExercises();
+  setExercises(data.exercises || []);
+  return state.exercises;
+}
+
 // Load foods + settings + a recent window of meals in a SINGLE request. Falls back to the
 // legacy three separate calls if the backend hasn't been redeployed with getBootstrap yet,
 // so the app keeps working during the redeploy window.
@@ -120,6 +169,10 @@ export async function loadBootstrap() {
     setMeals(data.meals, data.hasMore, data.nextBefore);
     setRecipesFromRows(data.recipes);
     recomputeDishes();
+    // Exercise tracker (guarded: getExercisesSafe/getWorkoutsSafe return empty if the tabs
+    // aren't set up yet, so an un-migrated sheet still boots the food side fine).
+    setExercises(data.exercises || []);
+    setWorkouts(data.workouts, data.workoutsHasMore, data.workoutsNextBefore);
   } catch (err) {
     if (err && err.code === "unknown_action") {
       // Old backend: fetch the pieces separately (still works, just slower). No recipes
@@ -133,6 +186,10 @@ export async function loadBootstrap() {
       state.settings = settings.settings || {};
       setMeals(meals.meals, meals.hasMore, meals.nextBefore);
       setRecipesFromRows([]);
+      // Old backend predates the exercise endpoints too — start empty; they populate once
+      // the Apps Script is redeployed with a new version.
+      setExercises([]);
+      setWorkouts([], false, null);
     } else {
       throw err;
     }
@@ -219,6 +276,74 @@ export function removeDraftItem(index) {
 
 export function draftIsEmpty() {
   return state.draft.items.length === 0;
+}
+
+// ---- Workout cache + exercise catalog mutators (mirror the meal/food helpers above) ----
+
+function sortWorkoutsNewestFirst() {
+  state.workouts.sort((a, b) => (a.timestamp < b.timestamp ? 1 : a.timestamp > b.timestamp ? -1 : 0));
+}
+
+export function prependWorkout(workout) {
+  state.workouts.unshift(workout);
+  sortWorkoutsNewestFirst();
+  bumpWorkoutsVersion();
+}
+
+export function replaceWorkout(workout) {
+  const i = state.workouts.findIndex((w) => String(w.id) === String(workout.id));
+  if (i >= 0) state.workouts[i] = workout;
+  else state.workouts.unshift(workout);
+  sortWorkoutsNewestFirst();
+  bumpWorkoutsVersion();
+}
+
+export function removeWorkout(id) {
+  state.workouts = state.workouts.filter((w) => String(w.id) !== String(id));
+  bumpWorkoutsVersion();
+}
+
+export function appendOlderWorkouts(list, hasMore, nextBefore) {
+  state.workouts = state.workouts.concat(list || []);
+  state.workoutsHasMore = !!hasMore;
+  state.workoutsNextBefore = nextBefore ?? null;
+}
+
+// Merge a single exercise (from add/update) into the catalog cache in place.
+export function upsertExercise(exercise) {
+  const idx = state.exercises.findIndex((e) => String(e.id) === String(exercise.id));
+  if (idx >= 0) state.exercises[idx] = exercise;
+  else state.exercises.push(exercise);
+  indexExercises();
+  return exercise;
+}
+
+// ---- Exercise draft (workout in progress) ----
+
+export function resetExerciseDraft() {
+  state.exerciseDraft = { timestamp: nowLocalIso(), note: "", items: [] };
+  return state.exerciseDraft;
+}
+
+export function setExerciseDraftTimestamp(iso) { state.exerciseDraft.timestamp = iso; }
+export function setExerciseDraftNote(note) { state.exerciseDraft.note = note; }
+
+export function addExerciseDraftItem(item) {
+  state.exerciseDraft.items.push(item);
+}
+
+// Merge a partial patch ({reps?, sets?, weight?, duration_min?}) into a draft item.
+export function updateExerciseDraftItem(index, patch) {
+  const it = state.exerciseDraft.items[index];
+  if (it) Object.assign(it, patch);
+}
+
+export function removeExerciseDraftItem(index) {
+  state.exerciseDraft.items.splice(index, 1);
+}
+
+export function exerciseDraftIsEmpty() {
+  return state.exerciseDraft.items.length === 0;
 }
 
 // ISO 8601 with local timezone offset (so "now" reflects the user's clock).

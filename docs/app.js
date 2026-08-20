@@ -9,10 +9,13 @@ import { createLogView } from "./views/log.js";
 import { createFoodsView } from "./views/foods.js";
 import { createDishesView } from "./views/dishes.js";
 import { createHistoryView } from "./views/history.js";
+import { createExerciseLogView } from "./views/exercise-log.js";
+import { createExercisesView } from "./views/exercises.js";
+import { createWorkoutsHistoryView } from "./views/workouts-history.js";
 
 // Cosmetic frontend version — purely a visual cue to confirm which build is live.
 // Bump the number on every commit that changes the frontend.
-const APP_VERSION = "version 7";
+const APP_VERSION = "version 8";
 
 const signinScreen = document.getElementById("signin-screen");
 const appEl = document.getElementById("app");
@@ -26,14 +29,15 @@ const catalogControls = document.getElementById("catalog-controls");
 let views = null;
 let started = false;
 
-// Navigation context handed to each view: open the Foods/Dishes catalog or History as a popup.
-const ctx = { openCatalog, openHistory };
+// Navigation context handed to each view: open the Foods/Dishes catalog or History as a popup
+// (food side), or the Exercises catalog / workout History (exercise side).
+const ctx = { openCatalog, openHistory, openExerciseCatalog, openWorkoutHistory };
 
-// ---- Page popup (Foods / Dishes / History, shown over the Log screen) ----
+// ---- Page popup (catalogs + histories, shown over the base screen) ----
 
-// Show one of the popup's sections (foods|dishes|history), hide the others.
+// Show one of the popup's sections, hide the others.
 function showSection(name) {
-  ["foods", "dishes", "history"].forEach((n) => {
+  ["foods", "dishes", "history", "exercises", "workouts"].forEach((n) => {
     document.getElementById("view-" + n).hidden = n !== name;
   });
 }
@@ -75,6 +79,49 @@ function openHistory() {
   views.history.show();
 }
 
+// Exercises catalog popup. Reuses the fixed bottom bar, but shows a plain "Exercises" title
+// in place of the Foods|Dishes segment (there's no dishes equivalent for exercises).
+function openExerciseCatalog(opts = {}) {
+  pageHeadTop.hidden = true;
+  pageFoot.hidden = false;
+  clear(catalogSeg);
+  catalogSeg.appendChild(el("div", { class: "segment" }, [
+    el("button", { class: "seg-btn", "aria-selected": "true", text: "🏋 Exercises" }),
+  ]));
+  pageHost.hidden = false;
+  showSection("exercises");
+  views.exercises.show(opts, catalogControls);
+}
+
+// Workout history popup — top header (title + close), no bottom bar (mirrors openHistory).
+function openWorkoutHistory() {
+  pageFoot.hidden = true;
+  pageHeadTop.hidden = false;
+  clear(pageHeadLeft);
+  pageHeadLeft.appendChild(el("h2", { class: "page-title", text: "Workout history" }));
+  pageHost.hidden = false;
+  showSection("workouts");
+  views.workouts.show();
+}
+
+// ---- Bottom tab bar (switches the base page: Food entry <-> Exercise entry) ----
+
+function showPage(page) {
+  document.getElementById("view-log").hidden = page !== "food";
+  document.getElementById("view-exercise-log").hidden = page !== "exercise";
+  document.querySelectorAll("#tabbar .tab-btn").forEach((btn) => {
+    btn.setAttribute("aria-selected", String(btn.dataset.page === page));
+  });
+  if (page === "exercise") views.exerciseLog.show();
+  else views.log.show();
+}
+
+function wireTabbar() {
+  document.querySelectorAll("#tabbar .tab-btn").forEach((btn) => {
+    btn.addEventListener("click", () => showPage(btn.dataset.page));
+  });
+}
+
 // Wire the popup's close affordances once (both X buttons + tap-outside).
 function wirePage() {
   document.getElementById("page-close-top").addEventListener("click", closePage);
@@ -107,8 +154,12 @@ async function startApp() {
       foods: createFoodsView(ctx),
       dishes: createDishesView(ctx),
       history: createHistoryView(ctx),
+      exerciseLog: createExerciseLogView(ctx),
+      exercises: createExercisesView(ctx),
+      workouts: createWorkoutsHistoryView(ctx),
     };
     wirePage();
+    wireTabbar();
   }
 
   try {
@@ -118,7 +169,7 @@ async function startApp() {
   }
 
   renderAccountFooter();
-  views.log.show(); // Log is the always-visible base screen
+  showPage("food"); // Food Log is the default base screen; the tab bar switches to Exercise
 }
 
 // Re-auth handler for api.js: show the password screen and resolve once re-entered.

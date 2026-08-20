@@ -94,6 +94,12 @@ function messageFor(code) {
     case "bad_servings": return "Servings must be a positive number.";
     case "empty_meal": return "Add at least one item to the meal.";
     case "empty_dish": return "Add at least one ingredient to the dish.";
+    case "empty_workout": return "Add at least one exercise to the workout.";
+    case "bad_reps": return "Reps must be a positive number.";
+    case "bad_sets": return "Sets must be a positive number.";
+    case "bad_weight": return "Weight must be zero or a positive number.";
+    case "bad_duration": return "Duration must be a positive number of minutes.";
+    case "unknown_exercise": return "That exercise no longer exists.";
     case "not_found": return "That item no longer exists.";
     case "sheet_missing": return "The spreadsheet isn't set up yet (run setupSheet).";
     case "unknown_action": return "This needs the latest backend — redeploy the Apps Script (new version).";
@@ -115,3 +121,12 @@ export const deleteMeal = (id) => postAction("deleteMeal", { id });
 export const getMeals = (opts = {}) => postAction("getMeals", opts);
 export const getSettings = () => postAction("getSettings");
 export const updateSettings = (targets) => postAction("updateSettings", targets);
+
+// ---- Exercise tracker ----
+export const getExercises = () => postAction("getExercises");
+export const addExercise = (exercise) => postAction("addExercise", exercise);
+export const updateExercise = (patch) => postAction("updateExercise", patch);
+export const addWorkout = (workout) => postAction("addWorkout", workout);
+export const updateWorkout = (workout) => postAction("updateWorkout", workout);
+export const deleteWorkout = (id) => postAction("deleteWorkout", { id });
+export const getWorkouts = (opts = {}) => postAction("getWorkouts", opts);

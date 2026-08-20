@@ -4,6 +4,25 @@ Notable changes to the Food Tracker, newest first. Dates are absolute.
 
 ## 2026-08-20
 
+### Exercise tracker + bottom tab bar
+
+Added a second, independent feature — an **Exercise Tracker** — alongside food tracking, reachable
+from a new **bottom tab bar** (🍽 Food / 🏋 Exercise) that switches the base page. It mirrors the
+food side:
+
+- **Exercises catalog** — a searchable list with the same three names (English / Spanish / free-form)
+  plus optional **default reps, sets, weight, and duration** that prefill the log.
+- **Workout log** — a dated session groups several exercises; each records **reps, sets, weight, and
+  duration** (weight/duration optional, defaults prefilled and overridable). Includes quick-picks and
+  "Repeat last workout". No daily-targets summary.
+- **Workout history** — sessions grouped by day (count of exercises · sets), with edit/delete.
+
+Data lives in the **same Google Sheet** on three new tabs — `Exercises`, `Workouts`, `WorkoutItems`
+(parallel to `Foods`/`Meals`/`MealItems`). New Apps Script actions: `getExercises`, `addExercise`,
+`updateExercise`, `addWorkout`, `updateWorkout`, `deleteWorkout`, `getWorkouts`; `getBootstrap` now
+also returns exercises + recent workouts. **After updating the Apps Script, re-run `setupSheet()`
+and deploy a new Web App version.** Version → **version 8**.
+
 ### Popup flush at the bottom
 
 Bottom-anchored the popup and grew it to 93vh so it reaches the screen bottom (no bottom gap),

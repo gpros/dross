@@ -516,4 +516,294 @@ export function openDishEditor(dish, { onSaved } = {}) {
   if (!isEdit) names.inputs.name.focus();
 }
 
+// ---- Exercise tracker editors -------------------------------------------------
+
+// The four numbers captured for one logged exercise. `short` labels the compact inline grid,
+// `long` labels the add prompt. reps/sets are required & positive; weight/duration optional.
+const SET_FIELDS = [
+  { key: "reps", short: "Reps", long: "Reps", positive: true, required: true },
+  { key: "sets", short: "Sets", long: "Sets", positive: true, required: true },
+  { key: "weight", short: "Kg", long: "Weight (kg)", positive: false, required: false },
+  { key: "duration_min", short: "Min", long: "Duration (min)", positive: true, required: false },
+];
+
+// Renders a compact grid of the four set inputs bound to `values` (mutated in place). Empty is
+// allowed for optional fields (=> null); a bad/empty required field reverts to its prior value.
+// `onChange(patch)` fires after each accepted edit. Shared by the exercise log and the workout
+// editor.
+export function exerciseSetFields(values, onChange = () => {}) {
+  const grid = el("div", { class: "set-fields" });
+  SET_FIELDS.forEach((f) => {
+    const input = el("input", {
+      class: "set-input", type: "text", inputmode: "decimal", autocomplete: "off",
+      value: values[f.key] == null ? "" : String(values[f.key]), "aria-label": f.long,
+    });
+    input.addEventListener("change", () => {
+      const raw = input.value.trim();
+      if (raw === "") {
+        if (f.required) { input.value = values[f.key] == null ? "" : String(values[f.key]); return; }
+        values[f.key] = null; onChange({ [f.key]: null }); return;
+      }
+      const v = parseDecimal(raw);
+      if (v == null || Number.isNaN(v) || (f.positive ? v <= 0 : v < 0)) {
+        input.value = values[f.key] == null ? "" : String(values[f.key]); return;
+      }
+      values[f.key] = v; onChange({ [f.key]: v });
+    });
+    grid.appendChild(el("label", { class: "set-field" }, [el("span", { text: f.short }), input]));
+  });
+  return grid;
+}
+
+// Prompt for reps/sets/weight/duration when adding an exercise to the draft workout. Prefilled
+// from the exercise's defaults (or `initial` when re-editing). Resolves { reps, sets, weight,
+// duration_min } (weight/duration may be null), or null if cancelled.
+export function promptExerciseSet(exercise, initial = null) {
+  const name = typeof exercise === "string" ? exercise : (exercise ? displayName(exercise) : "");
+  const start = initial || {
+    reps: exercise && exercise.default_reps != null ? exercise.default_reps : null,
+    sets: exercise && exercise.default_sets != null ? exercise.default_sets : null,
+    weight: exercise && exercise.default_weight != null ? exercise.default_weight : null,
+    duration_min: exercise && exercise.default_duration_min != null ? exercise.default_duration_min : null,
+  };
+
+  return new Promise((resolve) => {
+    const inputs = {};
+    const rows = SET_FIELDS.map((f) => {
+      const inp = el("input", {
+        type: "text", inputmode: "decimal", autocomplete: "off",
+        value: start[f.key] == null ? "" : String(start[f.key]),
+        placeholder: f.required ? "required" : "optional",
+      });
+      inputs[f.key] = inp;
+      return el("label", { class: "field" }, [el("span", { text: f.long }), inp]);
+    });
+
+    const addBtn = el("button", { class: "btn primary", text: "Add" });
+    function submit() {
+      const out = {};
+      for (const f of SET_FIELDS) {
+        const raw = inputs[f.key].value.trim();
+        if (raw === "") {
+          if (f.required) { toast(`${f.long} is required.`, { error: true }); return; }
+          out[f.key] = null; continue;
+        }
+        const v = parseDecimal(raw);
+        if (v == null || Number.isNaN(v) || (f.positive ? v <= 0 : v < 0)) {
+          toast(`${f.long} must be ${f.positive ? "a positive" : "a zero or positive"} number.`, { error: true });
+          return;
+        }
+        out[f.key] = v;
+      }
+      closeModal();
+      resolve(out);
+    }
+    addBtn.addEventListener("click", submit);
+    Object.values(inputs).forEach((inp) => inp.addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); }));
+
+    const children = [
+      el("h2", { text: name }),
+      ...rows,
+      el("div", { class: "actions" }, [
+        el("button", { class: "btn", text: "Cancel", onclick: () => { closeModal(); resolve(null); } }),
+        addBtn,
+      ]),
+    ];
+    openModal(el("div", {}, children));
+    inputs.reps.focus();
+  });
+}
+
+// The optional default fields on an exercise (mirror NUTRIENT_FIELDS for the food editor).
+const EXERCISE_DEFAULT_FIELDS = [
+  { key: "default_reps", label: "Default reps", unit: "optional", positive: true },
+  { key: "default_sets", label: "Default sets", unit: "optional", positive: true },
+  { key: "default_weight", label: "Default weight", unit: "kg, optional", positive: false },
+  { key: "default_duration_min", label: "Default duration", unit: "min, optional", positive: true },
+];
+
+// exercise === null -> add mode; exercise object -> edit mode (prefilled).
+export function openExerciseEditor(exercise, { onSaved } = {}) {
+  const isEdit = !!exercise;
+  const names = nameFields(exercise);
+  const inputs = {};
+  const rows = EXERCISE_DEFAULT_FIELDS.map((f) => {
+    const inp = decimalInput(exercise ? exercise[f.key] : "");
+    inputs[f.key] = inp;
+    return fieldRow(f.label, f.unit, inp);
+  });
+
+  const saveBtn = el("button", { class: "btn primary", text: "Save" });
+  const form = el("div", {}, [
+    el("h2", { text: isEdit ? "Edit exercise" : "Add exercise" }),
+    ...names.rows,
+    el("p", { class: "muted small", text: "Fill in at least one name. Defaults are optional — they prefill the log, where you can override them each time." }),
+    ...rows,
+    el("div", { class: "actions" }, [
+      el("button", { class: "btn", text: "Cancel", onclick: closeModal }),
+      saveBtn,
+    ]),
+  ]);
+
+  saveBtn.addEventListener("click", async () => {
+    const namePatch = names.collect();
+    if (!namePatch) return;
+
+    const patch = { ...namePatch };
+    for (const f of EXERCISE_DEFAULT_FIELDS) {
+      const v = parseDecimal(inputs[f.key].value);
+      if (Number.isNaN(v)) { toast(`${f.label} must be a number.`, { error: true }); return; }
+      if (v != null && (f.positive ? v <= 0 : v < 0)) {
+        toast(`${f.label} must be ${f.positive ? "positive" : "zero or positive"}.`, { error: true }); return;
+      }
+      patch[f.key] = v; // null => clear
+    }
+
+    saveBtn.disabled = true;
+    saveBtn.textContent = "Saving…";
+    try {
+      const saved = isEdit
+        ? await api.updateExercise({ id: exercise.id, ...patch })
+        : await api.addExercise(patch);
+      state.upsertExercise(saved);
+      closeModal();
+      toast(isEdit ? "Exercise updated" : "Exercise added");
+      if (onSaved) onSaved(saved);
+    } catch (err) {
+      saveBtn.disabled = false;
+      saveBtn.textContent = "Save";
+      toast(err.message || "Could not save exercise.", { error: true });
+    }
+  });
+
+  openModal(form);
+  names.inputs.name.focus();
+}
+
+// ---- Workout editor (edit / delete a logged workout, from History) ----
+
+// workout: { id, timestamp, note, items:[{exercise_id, name, reps, sets, weight, duration_min}] }
+export function openWorkoutEditor(workout, { onSaved, onDeleted } = {}) {
+  const items = (workout.items || []).map((it) => ({
+    exercise_id: it.exercise_id, exercise_name: it.exercise_id ? undefined : it.name,
+    name: it.name, reps: it.reps, sets: it.sets, weight: it.weight, duration_min: it.duration_min,
+  }));
+
+  const dateInput = el("input", { type: "datetime-local", value: toLocalInputValue(workout.timestamp) });
+  const noteInput = el("input", { type: "text", placeholder: "Note (optional)", value: workout.note || "" });
+  const itemsEl = el("ul", { class: "items" });
+  const searchInput = el("input", { type: "search", placeholder: "Add an exercise…", autocomplete: "off" });
+  const resultsEl = el("ul", { class: "results" });
+
+  function renderItems() {
+    clear(itemsEl);
+    if (!items.length) {
+      itemsEl.appendChild(el("p", { class: "muted small", text: "No exercises. Add one below, or delete the workout." }));
+      return;
+    }
+    items.forEach((item, idx) => {
+      itemsEl.appendChild(el("li", { class: "item exercise-item" }, [
+        el("div", { class: "row between" }, [
+          el("span", { class: "name", text: item.name }),
+          el("button", {
+            class: "iconbtn", "aria-label": "Remove " + item.name, text: "✕",
+            onclick: () => { items.splice(idx, 1); renderItems(); },
+          }),
+        ]),
+        exerciseSetFields(item),
+      ]));
+    });
+  }
+
+  function addFromCatalog(ex) {
+    items.push({
+      exercise_id: ex.id, name: displayName(ex),
+      reps: ex.default_reps ?? null, sets: ex.default_sets ?? null,
+      weight: ex.default_weight ?? null, duration_min: ex.default_duration_min ?? null,
+    });
+    searchInput.value = ""; renderResults(""); renderItems();
+  }
+  function addNew(name) {
+    items.push({ exercise_name: name.trim(), name: name.trim(), reps: null, sets: null, weight: null, duration_min: null });
+    searchInput.value = ""; renderResults(""); renderItems();
+  }
+  function renderResults(query) {
+    clear(resultsEl);
+    const q = normalizeText(query);
+    if (!q) return;
+    const exercises = state.getExercises();
+    const exact = exercises.some((e) => foodMatchesExact(e, q));
+    if (!exact) {
+      resultsEl.appendChild(el("li", { class: "add-new", onclick: () => addNew(query) }, [
+        el("span", { text: `Add “${query.trim()}” as new exercise` }), el("span", { class: "meta", text: "new" }),
+      ]));
+    }
+    exercises.filter((e) => foodMatchesQuery(e, q)).slice(0, 8).forEach((e) => {
+      resultsEl.appendChild(el("li", { onclick: () => addFromCatalog(e) }, [el("span", { text: matchingName(e, q) })]));
+    });
+  }
+  searchInput.addEventListener("input", () => renderResults(searchInput.value));
+
+  const saveBtn = el("button", { class: "btn primary", text: "Save" });
+  saveBtn.addEventListener("click", async () => {
+    if (!items.length) { toast("Add an exercise, or delete the workout.", { error: true }); return; }
+    for (const it of items) {
+      if (!(it.reps > 0) || !(it.sets > 0)) { toast(`Set reps and sets for “${it.name}”.`, { error: true }); return; }
+    }
+    const iso = dateInput.value ? state.toLocalIso(new Date(dateInput.value)) : workout.timestamp;
+    const payloadItems = items.map((it) => ({
+      ...(it.exercise_id ? { exercise_id: it.exercise_id } : { exercise_name: it.name }),
+      reps: it.reps, sets: it.sets, weight: it.weight ?? null, duration_min: it.duration_min ?? null,
+    }));
+    saveBtn.disabled = true; saveBtn.textContent = "Saving…";
+    try {
+      const updated = await api.updateWorkout({ id: workout.id, timestamp: iso, note: noteInput.value.trim(), items: payloadItems });
+      const hadNew = items.some((it) => !it.exercise_id);
+      if (hadNew) { try { await state.loadExercises(true); } catch (_) {} }
+      state.replaceWorkout(updated);
+      closeModal();
+      toast("Workout updated");
+      if (onSaved) onSaved(updated);
+    } catch (err) {
+      saveBtn.disabled = false; saveBtn.textContent = "Save";
+      toast(err.message || "Could not update the workout.", { error: true });
+    }
+  });
+
+  const deleteBtn = el("button", { class: "btn danger", text: "Delete" });
+  let armed = false;
+  deleteBtn.addEventListener("click", async () => {
+    if (!armed) { armed = true; deleteBtn.textContent = "Tap again to delete"; return; }
+    deleteBtn.disabled = true; deleteBtn.textContent = "Deleting…";
+    try {
+      await api.deleteWorkout(workout.id);
+      state.removeWorkout(workout.id);
+      closeModal();
+      toast("Workout deleted");
+      if (onDeleted) onDeleted(workout.id);
+    } catch (err) {
+      armed = false; deleteBtn.disabled = false; deleteBtn.textContent = "Delete";
+      toast(err.message || "Could not delete the workout.", { error: true });
+    }
+  });
+
+  const form = el("div", {}, [
+    el("h2", { text: "Edit workout" }),
+    el("label", { class: "field" }, [el("span", { text: "When" }), dateInput]),
+    el("div", { class: "section-title", text: "Exercises" }),
+    itemsEl,
+    el("label", { class: "field", style: "margin-top:10px" }, [el("span", { text: "Add exercise" }), searchInput]),
+    resultsEl,
+    el("label", { class: "field", style: "margin-top:10px" }, [el("span", { text: "Note" }), noteInput]),
+    el("div", { class: "actions" }, [
+      el("button", { class: "btn", text: "Cancel", onclick: closeModal }),
+      saveBtn,
+    ]),
+    el("div", { style: "margin-top:10px; text-align:center" }, [deleteBtn]),
+  ]);
+
+  openModal(form);
+  renderItems();
+}
+
 export { NUTRIENT_FIELDS };
